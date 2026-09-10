@@ -1,0 +1,19 @@
+# Secrets
+.env
+*.pem
+
+# Databricks bundle state
+.databricks/
+
+# Generated / local artifacts
+kafka/.env
+grafana/.env
+docs/demo-runbook.html
+docs/superpowers/
+
+# Python
+*.pyc
+__pycache__/
+
+# Superpowers scratch
+.superpowers/
