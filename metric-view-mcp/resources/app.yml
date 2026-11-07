@@ -1,0 +1,24 @@
+resources:
+  apps:
+    metric_view_mcp:
+      name: mcp-metric-views
+      description: MCP server exposing only governed Unity Catalog metric views
+      source_code_path: ../app
+      # OBO: each caller's token is forwarded, so queries run as the user under their UC permissions.
+      user_api_scopes:
+        - sql
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+      config:
+        command: ["python", "-m", "metric_view_mcp"]
+        env:
+          - name: DATABRICKS_WAREHOUSE_ID
+            value_from: sql-warehouse
+          - name: MV_ALLOWED_SCHEMAS
+            value: ${var.allowed_schemas}
+      permissions:
+        - group_name: ${var.consumer_group}
+          level: CAN_USE

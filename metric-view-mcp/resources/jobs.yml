@@ -1,0 +1,28 @@
+resources:
+  jobs:
+    # Rerun after adding metric views. Grants SELECT on each one to the app SP and consumer group.
+    grant_metric_view_access:
+      name: metric-view-mcp-grant-access
+      tasks:
+        - task_key: grant
+          notebook_task:
+            notebook_path: ../jobs/grant_access.py
+            base_parameters:
+              app_name: ${resources.apps.metric_view_mcp.name}
+              allowed_schemas: ${var.allowed_schemas}
+              consumer_group: ${var.consumer_group}
+
+    # Optional demo: synthetic app events + two metric views. Skip it when you have your own metric views.
+    setup_demo_data:
+      name: metric-view-mcp-demo-data
+      parameters:
+        - name: catalog
+          default: main
+        - name: raw_schema
+          default: demo_raw
+        - name: semantic_schema
+          default: demo_semantic
+      tasks:
+        - task_key: build
+          notebook_task:
+            notebook_path: ../demo/setup_demo.py
