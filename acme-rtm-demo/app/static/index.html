@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alert Triage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #080c14;
+    --surface:  #0e1421;
+    --panel:    #111827;
+    --border:   #1a2235;
+    --border2:  #243049;
+    --text:     #c4d4e8;
+    --muted:    #5a718a;
+    --accent:   #00d4aa;
+    --accent-d: #00d4aa18;
+    --red:      #f0544f;
+    --red-d:    #f0544f18;
+    --green:    #2dd480;
+    --yellow:   #f5a72a;
+    --blue:     #4ea8ff;
+    --mono:     'JetBrains Mono', monospace;
+    --sans:     'Inter', system-ui, sans-serif;
+  }
+
+  html, body, #root { height: 100%; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Layout ── */
+  .layout { display: flex; flex-direction: column; height: 100vh; }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px;
+    height: 52px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .header-brand { display: flex; align-items: center; gap: 10px; }
+  .header-brand .name {
+    font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: #fff;
+  }
+  .header-brand .sub { font-size: 11px; color: var(--muted); }
+
+  .live-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    color: var(--accent);
+    background: var(--accent-d);
+    border: 1px solid var(--accent)33;
+    border-radius: 20px; padding: 4px 10px;
+  }
+  .live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+  .live-dot.stale { background: var(--yellow); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .last-update { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  .body { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Alert queue ── */
+  .queue {
+    width: 340px; flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    background: var(--surface);
+  }
+
+  .queue-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .queue-title { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .queue-badge {
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    padding: 1px 6px; border-radius: 10px;
+    background: var(--red-d); color: var(--red); border: 1px solid var(--red)33;
+  }
+  .queue-badge.empty { background: var(--accent-d); color: var(--accent); border-color: var(--accent)33; }
+
+  .queue-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .queue-list::-webkit-scrollbar { width: 4px; }
+  .queue-list::-webkit-scrollbar-track { background: transparent; }
+  .queue-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+  .alert-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    cursor: pointer;
+    background: var(--panel);
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+  .alert-card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--red);
+    border-radius: 8px 0 0 8px;
+  }
+  .alert-card:hover { border-color: var(--border2); }
+  .alert-card.selected {
+    border-color: var(--accent)66;
+    background: var(--accent-d);
+  }
+  .alert-card.selected::before { background: var(--accent); }
+
+  .card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; }
+  .card-symbol { font-family: var(--mono); font-size: 15px; font-weight: 500; color: #fff; }
+  .card-time { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+  .card-delta {
+    font-family: var(--mono); font-size: 22px; font-weight: 500;
+    color: var(--red); line-height: 1;
+    margin-bottom: 6px;
+  }
+  .card-delta.moderate { color: var(--yellow); }
+
+  .card-meta { display: flex; align-items: center; gap: 6px; }
+  .card-venue {
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    padding: 2px 6px; border-radius: 4px;
+    background: var(--border); color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .card-kind { font-size: 11px; color: var(--muted); }
+
+  .empty-queue {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--muted); gap: 8px; padding: 40px 20px; text-align: center;
+  }
+  .empty-icon { font-size: 28px; opacity: 0.4; }
+  .empty-title { font-size: 13px; font-weight: 500; color: var(--text); }
+  .empty-sub { font-size: 12px; }
+
+  /* ── Diagnosis ── */
+  .diagnosis { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .diag-placeholder {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--muted); gap: 10px;
+  }
+  .diag-placeholder .icon { font-size: 36px; opacity: 0.25; }
+  .diag-placeholder .label { font-size: 13px; }
+
+  .diag-content { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+  .diag-content::-webkit-scrollbar { width: 4px; }
+  .diag-content::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+  .diag-alert-header {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .diag-symbol { font-family: var(--mono); font-size: 20px; font-weight: 500; color: #fff; margin-bottom: 3px; }
+  .diag-kind { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .diag-stats { display: flex; gap: 20px; }
+  .stat-item { text-align: right; }
+  .stat-label { font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-value { font-family: var(--mono); font-size: 18px; font-weight: 500; color: var(--red); }
+  .stat-value.ok { color: var(--green); }
+
+  /* ── Section ── */
+  .section { }
+  .section-title {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 8px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  /* ── Table ── */
+  .data-table { width: 100%; border-collapse: collapse; }
+  .data-table th {
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted); text-align: left; padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table td {
+    font-family: var(--mono); font-size: 12px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border)88;
+    color: var(--text);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: var(--panel); }
+  .data-table .num { font-variant-numeric: tabular-nums; }
+  .data-table .hi { color: var(--red); }
+  .data-table .ok { color: var(--green); }
+  .data-table .warn { color: var(--yellow); }
+
+  .venue-status {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10px; font-weight: 500; padding: 2px 7px;
+    border-radius: 10px;
+  }
+  .venue-status.active { background: var(--green)15; color: var(--green); border: 1px solid var(--green)33; }
+  .venue-status.stale  { background: var(--yellow)15; color: var(--yellow); border: 1px solid var(--yellow)33; }
+
+  /* ── Actions ── */
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--sans); font-size: 13px; font-weight: 500;
+    padding: 8px 16px; border-radius: 7px; border: 1px solid;
+    cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+  }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-danger  { background: var(--red-d); color: var(--red); border-color: var(--red)44; }
+  .btn-danger:hover:not(:disabled)  { background: var(--red)22; }
+  .btn-accent  { background: var(--accent-d); color: var(--accent); border-color: var(--accent)44; }
+  .btn-accent:hover:not(:disabled)  { background: var(--accent)22; }
+  .btn-ghost   { background: transparent; color: var(--muted); border-color: var(--border2); }
+  .btn-ghost:hover:not(:disabled)   { color: var(--text); border-color: var(--border2); background: var(--panel); }
+
+  .feedback {
+    font-family: var(--mono); font-size: 12px;
+    padding: 8px 12px; border-radius: 6px;
+    border: 1px solid var(--accent)33;
+    background: var(--accent-d); color: var(--accent);
+  }
+
+  /* ── Spinner ── */
+  .spinner {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid var(--border2);
+    border-top-color: var(--accent);
+    animation: spin 0.7s linear infinite;
+    display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+function timeAgo(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
+
+function fmt(n, d = 1) {
+  if (n == null) return '—';
+  return Number(n).toFixed(d);
+}
+
+function AlertCard({ alert, selected, onClick }) {
+  const delta = alert.our_spread_bps != null && alert.best_competitor_bps != null
+    ? alert.our_spread_bps - alert.best_competitor_bps : null;
+  const severity = delta != null && delta > 15 ? 'high' : 'moderate';
+
+  return (
+    <div className={`alert-card${selected ? ' selected' : ''}`} onClick={onClick}>
+      <div className="card-top">
+        <span className="card-symbol">{alert.symbol}</span>
+        <span className="card-time">{timeAgo(alert.raised_at)}</span>
+      </div>
+      <div className={`card-delta${severity === 'moderate' ? ' moderate' : ''}`}>
+        +{fmt(delta)} bps
+      </div>
+      <div className="card-meta">
+        <span className="card-venue">{alert.venue}</span>
+        <span className="card-kind">spread widening</span>
+      </div>
+    </div>
+  );
+}
+
+function DiagnosisPanel({ alert, diagnosis }) {
+  const [loading, setLoading] = useState({});
+  const [feedback, setFeedback] = useState('');
+
+  const act = useCallback(async (endpoint, label) => {
+    setLoading(l => ({ ...l, [label]: true }));
+    setFeedback('');
+    try {
+      const r = await fetch(endpoint, { method: 'POST' });
+      const d = await r.json();
+      if (label === 'ack') setFeedback('Alert acknowledged.');
+      if (label === 'linear') setFeedback(`Ticket created: ${d.issue_id}`);
+      if (label === 'oncall') setFeedback('On-call notified (stub).');
+    } finally {
+      setLoading(l => ({ ...l, [label]: false }));
+    }
+  }, []);
+
+  if (!alert) {
+    return (
+      <div className="diag-placeholder">
+        <div className="icon">◎</div>
+        <div className="label">Select an alert to diagnose</div>
+      </div>
+    );
+  }
+
+  const delta = alert.our_spread_bps != null && alert.best_competitor_bps != null
+    ? alert.our_spread_bps - alert.best_competitor_bps : null;
+
+  return (
+    <div className="diag-content">
+      <div className="diag-alert-header">
+        <div>
+          <div className="diag-symbol">{alert.symbol}</div>
+          <div className="diag-kind">spread widening · {alert.venue}</div>
+        </div>
+        <div className="diag-stats">
+          <div className="stat-item">
+            <div className="stat-label">Our spread</div>
+            <div className="stat-value">{fmt(alert.our_spread_bps)} bps</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-label">Best competitor</div>
+            <div className="stat-value ok">{fmt(alert.best_competitor_bps)} bps</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-label">Delta</div>
+            <div className="stat-value">+{fmt(delta)} bps</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-title">Spread history — last 60s</div>
+        {diagnosis === null ? (
+          <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12, padding: '8px 10px', display:'flex', alignItems:'center', gap:8 }}>
+            <span className="spinner"/> Loading…
+          </div>
+        ) : diagnosis.history.length > 0 ? (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Window</th>
+                <th>Acme (bps)</th>
+                <th>Best competitor</th>
+                <th>Delta</th>
+              </tr>
+            </thead>
+            <tbody>
+              {diagnosis.history.map((r, i) => {
+                const d = r.spread_bps != null && r.best_competitor_bps != null
+                  ? r.spread_bps - r.best_competitor_bps : null;
+                return (
+                  <tr key={i}>
+                    <td className="num">{new Date(r.window_start).toLocaleTimeString()}</td>
+                    <td className={`num ${r.spread_bps > 8 ? 'hi' : ''}`}>{fmt(r.spread_bps, 2)}</td>
+                    <td className="num ok">{fmt(r.best_competitor_bps, 2)}</td>
+                    <td className={`num ${d > 8 ? 'hi' : d > 4 ? 'warn' : 'ok'}`}>+{fmt(d, 2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12, padding: '8px 10px' }}>
+            No spread data in last 5 minutes
+          </div>
+        )}
+      </div>
+
+      <div className="section">
+        <div className="section-title">Venue activity</div>
+        {diagnosis === null ? null : diagnosis.venues.length > 0 ? (
+          <table className="data-table">
+            <thead>
+              <tr><th>Venue</th><th>Last seen</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {diagnosis.venues.map((v, i) => {
+                const stale = v.seconds_ago > 5;
+                return (
+                  <tr key={i}>
+                    <td className="num">{v.venue}</td>
+                    <td className="num">{v.seconds_ago != null ? `${v.seconds_ago}s ago` : '—'}</td>
+                    <td>
+                      <span className={`venue-status ${stale ? 'stale' : 'active'}`}>
+                        {stale ? '● stale' : '● active'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12, padding: '8px 10px' }}>
+            Loading venues…
+          </div>
+        )}
+      </div>
+
+      <div className="section">
+        <div className="section-title">Actions</div>
+        <div className="actions">
+          <button
+            className="btn btn-danger"
+            onClick={() => act(`/api/alerts/${alert.id}/acknowledge`, 'ack')}
+            disabled={loading.ack}
+          >
+            {loading.ack ? <span className="spinner"/> : '✓'} Acknowledge
+          </button>
+          <button
+            className="btn btn-accent"
+            onClick={() => act(`/api/alerts/${alert.id}/linear`, 'linear')}
+            disabled={loading.linear}
+          >
+            {loading.linear ? <span className="spinner"/> : '⤴'} Create Ticket
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => act(`/api/alerts/${alert.id}/oncall`, 'oncall')}
+            disabled={loading.oncall}
+          >
+            {loading.oncall ? <span className="spinner"/> : '📞'} Notify On-Call
+          </button>
+        </div>
+        {feedback && <div className="feedback" style={{ marginTop: 10 }}>{feedback}</div>}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [alerts, setAlerts] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [diagnosis, setDiagnosis] = useState(null);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [stale, setStale] = useState(false);
+
+  useEffect(() => {
+    let staleTimer;
+    const fetchAlerts = async () => {
+      try {
+        const r = await fetch('/api/alerts');
+        const data = await r.json();
+        setAlerts(data);
+        setLastUpdate(new Date());
+        setStale(false);
+        clearTimeout(staleTimer);
+        staleTimer = setTimeout(() => setStale(true), 6000);
+      } catch (_) { setStale(true); }
+    };
+    fetchAlerts();
+    const id = setInterval(fetchAlerts, 2000);
+    return () => { clearInterval(id); clearTimeout(staleTimer); };
+  }, []);
+
+  useEffect(() => {
+    setDiagnosis(null);
+    if (!selectedId) return;
+    const fetchDiag = async () => {
+      try {
+        const r = await fetch(`/api/diagnosis/${selectedId}`);
+        if (r.ok) setDiagnosis(await r.json());
+      } catch (_) {}
+    };
+    fetchDiag();
+    const id = setInterval(fetchDiag, 2000);
+    return () => clearInterval(id);
+  }, [selectedId]);
+
+  const selectedAlert = alerts.find(a => a.id === selectedId) || null;
+
+  return (
+    <div className="layout">
+      <header className="header">
+        <div className="header-brand">
+          <span className="name">Acme · Alert Triage</span>
+          <span className="sub">Market surveillance</span>
+        </div>
+        <div className="header-right">
+          {lastUpdate && (
+            <span className="last-update">updated {timeAgo(lastUpdate.toISOString())}</span>
+          )}
+          <div className="live-pill">
+            <span className={`live-dot${stale ? ' stale' : ''}`}/>
+            {stale ? 'reconnecting' : 'live · 2s'}
+          </div>
+        </div>
+      </header>
+
+      <div className="body">
+        <div className="queue">
+          <div className="queue-header">
+            <span className="queue-title">Open Alerts</span>
+            <span className={`queue-badge${alerts.length === 0 ? ' empty' : ''}`}>
+              {alerts.length}
+            </span>
+          </div>
+          <div className="queue-list">
+            {alerts.length === 0 ? (
+              <div className="empty-queue">
+                <div className="empty-icon">◎</div>
+                <div className="empty-title">No open alerts</div>
+                <div className="empty-sub">All spreads within threshold</div>
+              </div>
+            ) : (
+              alerts.map(a => (
+                <AlertCard
+                  key={a.id}
+                  alert={a}
+                  selected={a.id === selectedId}
+                  onClick={() => setSelectedId(a.id === selectedId ? null : a.id)}
+                />
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="diagnosis">
+          <DiagnosisPanel key={selectedId} alert={selectedAlert} diagnosis={diagnosis}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

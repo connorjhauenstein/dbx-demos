@@ -1,0 +1,14 @@
+command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+env:
+  - name: LAKEBASE_HOST
+    valueFrom: lakebase_host
+  - name: LAKEBASE_DB
+    value: databricks_postgres
+  - name: LAKEBASE_PASSWORD
+    valueFrom: lakebase_password
+  - name: LAKEBASE_WRITER_PASSWORD
+    valueFrom: lakebase_writer_password
+  - name: LINEAR_API_KEY
+    valueFrom: linear_api_key
+  - name: LINEAR_TEAM_ID
+    valueFrom: linear_team_id

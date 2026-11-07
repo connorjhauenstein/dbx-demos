@@ -1,0 +1,17 @@
+services:
+  grafana:
+    image: grafana/grafana-oss:11.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 1s
+      LAKEBASE_HOST: ${LAKEBASE_HOST}
+      GRAFANA_DB_PASSWORD: ${LAKEBASE_PASSWORD}
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  grafana_data:

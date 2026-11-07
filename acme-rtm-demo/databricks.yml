@@ -1,0 +1,138 @@
+bundle:
+  name: acme-rtm-demo
+
+variables:
+  catalog:
+    default: my_catalog  # replace with your Unity Catalog name
+  schema:
+    default: acme_rtm
+  ec2_host:
+    description: "EC2 public DNS for Kafka bootstrap"
+  lakebase_endpoint:
+    description: "Lakebase endpoint id (project.branch.endpoint)"
+  lakebase_host:
+    description: "Lakebase hostname (ep-xxxx.databricks.com)"
+  lakebase_db:
+    default: databricks_postgres
+  lakebase_password:
+    description: "Password for grafana_reader Postgres role"
+  lakebase_writer_password:
+    description: "Password for lakebase_writer Postgres role"
+  alert_threshold_bps:
+    default: "8"
+
+targets:
+  dev:
+    workspace:
+      host: https://<your-workspace>.cloud.databricks.com  # replace with your workspace URL
+
+resources:
+  schemas:
+    acme_rtm:
+      catalog_name: ${var.catalog}
+      name: ${var.schema}
+
+  volumes:
+    checkpoints:
+      catalog_name: ${var.catalog}
+      schema_name: ${var.schema}
+      name: checkpoints
+      volume_type: MANAGED
+
+  jobs:
+    rtm_job:
+      name: acme-rtm-job
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: stream
+          new_cluster:
+            spark_version: 18.x-scala2.13
+            node_type_id: m5.xlarge
+            num_workers: 4
+            spark_conf:
+              spark.databricks.streaming.realTimeMode.enabled: "true"
+              spark.sql.shuffle.partitions: "4"
+            aws_attributes:
+              availability: ON_DEMAND
+              first_on_demand: 2
+              ebs_volume_type: GENERAL_PURPOSE_SSD
+              ebs_volume_count: 1
+              ebs_volume_size: 100
+            data_security_mode: SINGLE_USER
+            spark_env_vars:
+              KAFKA_BOOTSTRAP: "${var.ec2_host}:9092"
+              KAFKA_TOPIC: "md.quotes.normalized"
+              LAKEBASE_ENDPOINT: "${var.lakebase_endpoint}"
+              LAKEBASE_HOST: "${var.lakebase_host}"
+              LAKEBASE_DB: "${var.lakebase_db}"
+              LAKEBASE_PASSWORD: "${var.lakebase_password}"
+              LAKEBASE_WRITER_PASSWORD: "${var.lakebase_writer_password}"
+              CHECKPOINT_LOCATION: "/Volumes/${var.catalog}/${var.schema}/checkpoints/rtm4"
+          libraries:
+            - pypi:
+                package: psycopg2-binary==2.9.9
+          spark_python_task:
+            python_file: rtm/rtm_job.py
+
+    alert_poller:
+      name: acme-alert-poller
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: poll
+          new_cluster:
+            spark_version: 18.x-scala2.13
+            node_type_id: m5.large
+            num_workers: 0
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: "local[*]"
+            custom_tags:
+              ResourceClass: SingleNode
+            aws_attributes:
+              availability: ON_DEMAND
+              ebs_volume_type: GENERAL_PURPOSE_SSD
+              ebs_volume_count: 1
+              ebs_volume_size: 100
+            data_security_mode: SINGLE_USER
+            spark_env_vars:
+              LAKEBASE_HOST: "${var.lakebase_host}"
+              LAKEBASE_DB: "${var.lakebase_db}"
+              LAKEBASE_PASSWORD: "${var.lakebase_password}"
+              LAKEBASE_WRITER_PASSWORD: "${var.lakebase_writer_password}"
+              ALERT_THRESHOLD_BPS: "${var.alert_threshold_bps}"
+          libraries:
+            - pypi:
+                package: psycopg2-binary==2.9.9
+          spark_python_task:
+            python_file: rtm/alert_poller.py
+
+  apps:
+    triage_app:
+      name: acme-triage-app
+      source_code_path: ./app
+      resources:
+        - name: lakebase_host
+          secret:
+            scope: acme-rtm-demo
+            key: lakebase_host
+            permission: READ
+        - name: lakebase_password
+          secret:
+            scope: acme-rtm-demo
+            key: lakebase_password
+            permission: READ
+        - name: lakebase_writer_password
+          secret:
+            scope: acme-rtm-demo
+            key: lakebase_writer_password
+            permission: READ
+        - name: linear_api_key
+          secret:
+            scope: acme-rtm-demo
+            key: linear_api_key
+            permission: READ
+        - name: linear_team_id
+          secret:
+            scope: acme-rtm-demo
+            key: linear_team_id
+            permission: READ
