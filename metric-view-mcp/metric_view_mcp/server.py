@@ -60,7 +60,7 @@ def list_metric_views(ctx: Context) -> dict:
 def describe_metric_view(view: str, ctx: Context) -> dict:
     """Get a metric view's measures and dimensions with types, business descriptions, and example SQL."""
     v = registry.get(view, *as_user(ctx))
-    example = build_query(v, [v.measures[0]["name"]], [v.dimensions[0]["name"]], limit=10)[0]
+    example = build_query(v, [v.measures[0]["name"]], [d["name"] for d in v.dimensions[:1]], limit=10)[0]
     return {**asdict(v), "sql_example": example}
 
 
