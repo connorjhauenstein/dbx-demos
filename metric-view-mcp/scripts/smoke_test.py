@@ -35,24 +35,19 @@ async def main(url, token, view, raw_table):
             check("lists the metric view", view in names, names)
 
             desc, _ = await call("describe_metric_view", view=view)
-            measure = desc["measures"][0]["name"]
-            dim = next(d["name"] for d in desc["dimensions"] if d["type"] == "string")
-
-            res, err = await call("query_metric", view=view, measures=[measure], dimensions=[dim])
-            check("queries a measure by dimension", res and res["rows"], err)
+            sql = desc["sql_example"]
+            res, err = await call("query_metric_views", sql=sql)
+            check("runs describe_metric_view's sql_example", res and res["rows"], err)
             if res:
-                print("      " + res["sql"].replace("\n", "\n      ") + f"\n      rows: {res['rows'][:3]}")
+                print("      " + sql.replace("\n", "\n      ") + f"\n      rows: {res['rows'][:3]}")
 
-            for label, args in [
-                ("rejects a raw source table", {"view": raw_table, "measures": ["x"]}),
-                ("rejects an invented measure", {"view": view, "measures": ["Revenue"]}),
+            for label, query in [
+                ("rejects a raw source table", f"SELECT * FROM {raw_table}"),
+                ("rejects a raw table hidden in a subquery", f"SELECT * FROM (SELECT * FROM {raw_table}) t"),
+                ("rejects writes", f"DROP TABLE {desc['view']}"),
             ]:
-                _, err = await call("query_metric", **args)
+                _, err = await call("query_metric_views", sql=query)
                 check(label, err is not None, "no error returned")
-
-            res, err = await call("query_metric", view=view, measures=[measure],
-                                  filters=[{"dimension": dim, "op": "=", "value": "x' OR 1=1 --"}])
-            check("binds filter values (injection matches nothing)", res and res["rows"] == [["0"]], res or err)
 
     print("\nALL CHECKS PASSED" if not failed else f"\n{failed} CHECK(S) FAILED")
     return failed

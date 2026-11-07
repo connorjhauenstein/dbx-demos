@@ -13,7 +13,7 @@ Edit `config.yml`. Put one entry per line, in any mix:
 
 ```yaml
 include:
-  - "*"                              # every metric view the app's service principal can see
+  - "*"                              # every metric view the caller can see
   - prod                             # every metric view in a catalog
   - prod.semantic                    # every metric view in a schema
   - prod.finance.revenue_metrics     # one metric view
@@ -28,7 +28,8 @@ include:
   - prod.marketing
 ```
 
-The app and the grant job both read this file. Rerun the grant job after changing it.
+Users still only see the in-scope metric views they can access in Unity Catalog. Redeploy and
+restart the app after changing this file.
 
 ## Deploy
 
@@ -41,39 +42,52 @@ git clone https://github.com/connorjhauenstein/dbx-demos.git && cd dbx-demos/met
 export DATABRICKS_CONFIG_PROFILE=<profile>
 
 databricks bundle deploy
-databricks bundle run grant_metric_view_access   # rerun after changing config.yml
 databricks bundle run metric_view_mcp
 ```
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `consumer_group` | `account users` | Group allowed to use the app and query the metric views |
+| `consumer_group` | `account users` | Group allowed to use the app |
 | `warehouse_id` | "Serverless Starter Warehouse" | Warehouse that runs queries (serverless autoscales) |
 
 Override either with `BUNDLE_VAR_<name>=...`. Add `-t prod` for a production deployment.
 
-The grant job gives `SELECT` on each in-scope metric view, plus `USE CATALOG` / `USE SCHEMA` on
-their parents, to the app's service principal and to `consumer_group`. Nothing is granted on
-source tables, because metric views run with their owner's rights. Whoever runs the job needs
-permission to grant on those metric views.
+The app runs everything as the caller, so it needs no Unity Catalog grants of its own. Users need
+`SELECT` on the metric views they should query, plus `USE CATALOG` / `USE SCHEMA` on their
+parents. That's usually granted in the same repo that creates the metric views. They don't need
+access to the source tables, because metric views run with their owner's rights.
 
 ## Tools
 
 | Tool | Does |
 |---|---|
-| `list_metric_views` | Metric views the caller can use, with measure and dimension names |
-| `describe_metric_view` | Measures and dimensions, with types, descriptions, and a ready-to-run `MEASURE()` SQL example |
-| `query_metric` | `view`, `measures`, `dimensions`, `filters`, `order_by`, `limit`. Returns rows plus the SQL that ran |
+| `list_metric_views` | The whole in-scope catalog, compactly: each view's description plus its measure and dimension names with synonyms, e.g. `Active Users (WAU, weekly actives)`. The agent's own LLM reads it to choose the right metric. For very large catalogs, optional `search` returns only views matching those words, best first |
+| `describe_metric_view` | The metric view's complete YAML definition as stored in Unity Catalog (measures, dimensions, synonyms, display names, formats, and any keys added later), plus a ready-to-run `MEASURE()` SQL example |
+| `query_metric_views` | Runs one read-only SQL query written by the agent's own LLM. Returns columns and up to 1000 rows |
 
-`query_metric` never takes free-form SQL. It checks every name against the metric view's
-definition and binds filter values as parameters.
+There's no LLM inside the server. The client's model (Claude, or whichever model the agent uses)
+writes the SQL, the same way Cube's MCP takes LLM-written Cube SQL. Before running anything, the
+server parses the SQL and rejects it unless it's a single `SELECT` whose every table is an
+in-scope metric view the caller can see. CTEs, subqueries, window functions, and joins across
+those metric views are fine. Raw tables, file paths, `read_files()`, and writes are rejected.
 
-## Access: service principal ceiling ∩ user
+## Access
 
-- **Ceiling:** only metric views that match `config.yml` and that the app's service principal can
-  read are offered. Raw tables never are.
-- **Scope down (OBO):** each caller's token is forwarded. Discovery and queries run as the user,
-  so their grants, row filters, and column masks apply, and query history shows them.
+A caller sees and queries only metric views that match `config.yml` **and** that they can access
+in Unity Catalog. Discovery, definitions, and queries all run with the caller's forwarded token
+(OBO), so their grants, row filters, and column masks apply, and query history shows them.
+
+### Strongest setup
+
+A query runs as exactly one identity, so there's no engine-level "service principal scope plus
+user permissions". To get both from Unity Catalog itself, grant this MCP's users `SELECT` on the
+metric views and nothing on the source tables (metric views run with their owner's rights, so users
+don't need source access). Then UC enforces the metric-views-only boundary and each user's row
+filters and masks in the same query, and the server's SQL check is a second layer. For users who
+also have raw-table access elsewhere, the SQL check is what keeps this MCP on metric views.
+
+**Synonyms matter.** The agent picks metrics from names, descriptions, and synonyms, so add
+`synonyms` and `comment` to measures and dimensions in your metric view YAML.
 
 ## Connect an agent
 
@@ -84,14 +98,6 @@ The app is named `mcp-metric-views`. The `mcp-` prefix makes it show up in
   model with tools enabled (Claude works; GPT-6.1 Terra doesn't support tools in Playground).
 - **Claude Code and other coding agents:** `ug mcp add --names "app:mcp-metric-views"`.
 - **Any MCP client:** `https://<app-url>/mcp` with a Databricks OAuth token for the user.
-
-### Pair with the Databricks SQL MCP (optional)
-
-Add `system.ai.dbsql` (Unity Gateway beta) next to this server. The agent discovers metrics here,
-then adapts `sql_example` and runs it with `execute_sql`. That's the same pattern as Cube's
-`searchDataModel` + `runQuery`. `execute_sql` runs any SQL as the user, so grant users `SELECT`
-on the metric views, not on raw tables. To make it read-only, set `disallow_writes = true` on
-the built-in `system.ai.dbsql_policy`. This applies to every user of `system.ai.dbsql` in the account.
 
 ## Observability
 

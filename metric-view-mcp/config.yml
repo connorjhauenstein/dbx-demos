@@ -1,5 +1,5 @@
 # Which metric views this MCP exposes: one entry per line, in any mix of
-#   "*"                       every metric view the app's service principal can see
+#   "*"                       every metric view the caller can see
 #   catalog                   every metric view in a catalog
 #   catalog.schema            every metric view in a schema
 #   catalog.schema.view       one metric view
@@ -10,6 +10,7 @@
 #     - prod.finance.margin_metrics
 #     - prod.marketing              # plus every metric view in this schema
 #
-# The app and the grant job both read this file. Rerun the grant job after changing it.
+# Users still only see the in-scope metric views they have access to in Unity Catalog.
+# Redeploy and restart the app after changing this file.
 include:
   - my_catalog.my_semantic_schema

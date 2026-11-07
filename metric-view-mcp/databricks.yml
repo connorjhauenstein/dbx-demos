@@ -1,7 +1,6 @@
 # Metric-view MCP: an MCP server that exposes only Unity Catalog metric views.
 # Choose which metric views in config.yml, then:
 #   databricks bundle deploy
-#   databricks bundle run grant_metric_view_access
 #   databricks bundle run metric_view_mcp
 bundle:
   name: metric_view_mcp

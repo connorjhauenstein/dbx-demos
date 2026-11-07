@@ -1,81 +1,72 @@
-"""Metric view definitions and the only SQL this server can produce against them."""
+"""Metric view YAML helpers, and the check that keeps agent-written SQL on metric views."""
 
-import json
-from dataclasses import dataclass
-
+import sqlglot
 from mcp.server.mcpserver.exceptions import ToolError
+from sqlglot import exp
 
-OPERATORS = ("=", "!=", ">", ">=", "<", "<=", "IN", "BETWEEN")
-
-
-@dataclass(frozen=True)
-class MetricView:
-    name: str
-    description: str
-    measures: list[dict]
-    dimensions: list[dict]
-
-
-def parse(table: dict) -> MetricView:
-    """Build a MetricView from a Unity Catalog Tables API response."""
-    measures, dimensions = [], []
-    for col in table["columns"]:
-        field = {"name": col["name"], "type": col["type_text"], "description": col.get("comment", "")}
-        kind = json.loads(col["type_json"])["metadata"].get("metric_view.type")
-        (measures if kind == "measure" else dimensions).append(field)
-    return MetricView(table["full_name"].lower(), table.get("comment", ""), measures, dimensions)
+# Functions that reach outside the query (external HTTP, model calls, secrets, files, streams).
+BLOCKED_PREFIXES = ("ai_", "read_")
+BLOCKED_FUNCTIONS = {"http_request", "remote_query", "secret", "try_secret", "vector_search", "cloud_files"}
 
 
 def quote(name: str) -> str:
     return ".".join("`" + part.replace("`", "``") + "`" for part in name.split("."))
 
 
-def build_query(view: MetricView, measures, dimensions=(), filters=(), order_by=(), limit=100, max_rows=1000):
-    """Return (sql, parameters). Names must exist in the view; filter values are always bound."""
+def example_sql(name: str, definition: dict) -> str:
+    """A runnable MEASURE() query over the view's first dimension and measure."""
+    measures, dimensions = members(definition)
+    columns = [quote(d["name"]) for d in dimensions[:1]] + [f"MEASURE({quote(m['name'])})" for m in measures[:1]]
+    return f"SELECT {', '.join(columns)}\nFROM {quote(name)}\nGROUP BY ALL\nLIMIT 10"
 
-    def pick(name, fields, kind):
-        by_key = {f["name"].lower(): f["name"] for f in fields}
-        if name.lower() not in by_key:
-            raise ToolError(f"Unknown {kind} {name!r}. Valid {kind}s: {', '.join(by_key.values())}")
-        return by_key[name.lower()]
 
-    if not measures:
-        raise ToolError("At least one measure is required.")
-    measures = [pick(m, view.measures, "measure") for m in measures]
-    dimensions = [pick(d, view.dimensions, "dimension") for d in dimensions]
+def members(definition: dict) -> tuple[list[dict], list[dict]]:
+    return definition.get("measures", []), definition.get("dimensions") or definition.get("fields") or []
 
-    params = []
 
-    def bind(value):
-        params.append({"name": f"p{len(params)}", "value": str(value)})
-        return f":p{len(params) - 1}"
+def compact(definition: dict) -> dict:
+    """Measure and dimension names with their synonyms, e.g. "Active Users (WAU, weekly actives)"."""
+    def label(member):
+        synonyms = member.get("synonyms") or []
+        return f"{member['name']} ({', '.join(synonyms)})" if synonyms else member["name"]
 
-    where = []
-    for f in filters:
-        column, op, value = quote(pick(f["dimension"], view.dimensions, "dimension")), f["op"], f["value"]
-        if op in ("IN", "BETWEEN") and not (isinstance(value, list) and value and (op == "IN" or len(value) == 2)):
-            raise ToolError(f"{op} needs a list value ([low, high] for BETWEEN).")
-        if op == "IN":
-            where.append(f"{column} IN ({', '.join(bind(v) for v in value)})")
-        elif op == "BETWEEN":
-            where.append(f"{column} BETWEEN {bind(value[0])} AND {bind(value[1])}")
-        else:
-            where.append(f"{column} {op} {bind(value)}")
+    measures, dimensions = members(definition)
+    return {"measures": [label(m) for m in measures], "dimensions": [label(d) for d in dimensions]}
 
-    selected = [{"name": n} for n in dimensions + measures]
-    order = []
-    for o in order_by:
-        field, _, direction = o.strip().rpartition(" ")
-        if direction.upper() not in ("ASC", "DESC"):
-            field, direction = o.strip(), "ASC"
-        order.append(f"{quote(pick(field, selected, 'selected field'))} {direction.upper()}")
 
-    sql = "SELECT " + ", ".join([quote(d) for d in dimensions] + [f"MEASURE({quote(m)}) AS {quote(m)}" for m in measures])
-    sql += f"\nFROM {quote(view.name)}"
-    if where:
-        sql += "\nWHERE " + "\n  AND ".join(where)
-    sql += "\nGROUP BY ALL"
-    if order:
-        sql += "\nORDER BY " + ", ".join(order)
-    sql += f"\nLIMIT {min(limit, max_rows)}"
-    return sql, params
+def matching_members(definition: dict, terms: list[str]) -> dict[str, int]:
+    """Measures and dimensions whose name, display name, synonyms, or comment contain search terms,
+    with how many terms each matched."""
+    matches = {}
+    measures, dimensions = members(definition)
+    for member in measures + dimensions:
+        text = " ".join([member.get("name", ""), member.get("display_name", ""), member.get("comment", ""),
+                         *member.get("synonyms", [])]).lower()
+        hits = sum(term in text for term in terms)
+        if hits:
+            matches[member["name"]] = hits
+    return matches
+
+
+def check_sql(sql: str, allowed: set[str]) -> None:
+    """Allow one read-only query whose every table is an allowed metric view (or a CTE it defines)."""
+    try:
+        statements = sqlglot.parse(sql, read="databricks")
+    except sqlglot.errors.ParseError as e:
+        raise ToolError(f"Could not parse the SQL: {e}")
+    if len(statements) != 1 or not isinstance(statements[0], exp.Query):
+        raise ToolError("Send exactly one SELECT query.")
+    query = statements[0]
+    for func in query.find_all(exp.Func):
+        name = (func.name if isinstance(func, exp.Anonymous) else func.sql_name()).lower()
+        if name.startswith(BLOCKED_PREFIXES) or name in BLOCKED_FUNCTIONS:
+            raise ToolError(f"{name}() isn't allowed. Query metric views with standard SQL functions.")
+    ctes = {cte.alias.lower() for cte in query.find_all(exp.CTE)}
+    for table in query.find_all(exp.Table):
+        name = ".".join(p for p in (table.catalog, table.db, table.name) if p).lower()
+        if name in ctes or name in allowed:
+            continue
+        raise ToolError(
+            f"{table.sql(dialect='databricks')!r} is not an available metric view. Query only metric views "
+            "from list_metric_views, by full catalog.schema.view name."
+        )
