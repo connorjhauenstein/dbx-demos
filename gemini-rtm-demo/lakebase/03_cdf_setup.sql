@@ -1,1 +1,0 @@
-ALTER TABLE market.quote_1s REPLICA IDENTITY FULL;
