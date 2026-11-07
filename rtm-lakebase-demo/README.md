@@ -1,4 +1,4 @@
-# Acme RTM Demo
+# RTM to Lakebase Demo
 
 End-to-end real-time market data pipeline: `Kafka → Spark RTM → Lakebase → {Grafana OSS, Databricks App}`
 
@@ -74,7 +74,7 @@ ssh -i ~/.ssh/<your-key>.pem ubuntu@<EC2_HOST> \
 ### 3. Provision Lakebase
 
 ```bash
-python3 deploy/lakebase_provision.py --profile <your-profile> --instance acme-rtm-demo
+python3 deploy/lakebase_provision.py --profile <your-profile> --instance rtm-lakebase-demo
 # Prints LAKEBASE_HOST and LAKEBASE_ENDPOINT — add these to .env
 ```
 
@@ -99,8 +99,8 @@ databricks bundle deploy \
   --var lakebase_writer_password=$LAKEBASE_WRITER_PASSWORD \
   --profile <your-profile>
 
-databricks bundle run acme-rtm-job --profile <your-profile>
-databricks bundle run acme-alert-poller --profile <your-profile>
+databricks bundle run rtm-job --profile <your-profile>
+databricks bundle run rtm-alert-poller --profile <your-profile>
 ```
 
 ### 6. Start tick generator (EC2)
@@ -129,7 +129,7 @@ Then open [Demo_Runbook](Demo_Runbook.py) in the Databricks workspace and run th
 ### Demo narrative
 
 **Beat 1 — Live feed (~3 min)**  
-Grafana → Market Monitor. Walk through the four panels: Ticks/sec, Spread by Venue, Acme vs Best Competitor, RTM E2E Latency.
+Grafana → Market Monitor. Walk through the four panels: Ticks/sec, Spread by Venue, Primary Venue vs Best Competitor, RTM E2E Latency.
 
 **Beat 2 — Show the code (~1.5 min)**  
 Open `rtm/rtm_job.py` in the workspace. ~40 lines. `trigger(realTime="5 minutes")` is the checkpoint interval, not the latency target.

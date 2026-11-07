@@ -58,7 +58,7 @@ LAKEBASE_WRITER_PASSWORD = _require("LAKEBASE_WRITER_PASSWORD")  # rtm_writer ro
 
 # ── Databricks ────────────────────────────────────────────────────────────────
 UC_CATALOG = _optional("UC_CATALOG", "my_catalog")
-UC_SCHEMA  = _optional("UC_SCHEMA",  "acme_rtm")
+UC_SCHEMA  = _optional("UC_SCHEMA",  "rtm_demo")
 
 # ── Spark / RTM ───────────────────────────────────────────────────────────────
 # Defaults to the UC Volume path derived from UC_CATALOG/UC_SCHEMA.

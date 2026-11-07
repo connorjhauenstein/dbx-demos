@@ -134,7 +134,7 @@
     },
     {
       "id": 2,
-      "title": "Acme vs Best Competitor (bps)",
+      "title": "Primary Venue vs Best Competitor (bps)",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 4 },
       "datasource": { "type": "postgres", "uid": "lakebase" },
@@ -142,7 +142,7 @@
         {
           "datasource": { "type": "postgres", "uid": "lakebase" },
           "rawQuery": true,
-          "rawSql": "SELECT window_start AS time, spread_bps AS acme_spread_bps, best_competitor_bps, delta_bps\nFROM market.spread_vs_best\nWHERE symbol = 'BTC-USD' AND venue = 'acme' AND $__timeFilter(window_start)\nORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, spread_bps AS primary_spread_bps, best_competitor_bps, delta_bps\nFROM market.spread_vs_best\nWHERE symbol = 'BTC-USD' AND venue = 'primary' AND $__timeFilter(window_start)\nORDER BY window_start",
           "format": "time_series",
           "refId": "A"
         }

@@ -18,7 +18,7 @@ EC2_INSTANCE_ID="${EC2_INSTANCE_ID:?EC2_INSTANCE_ID not set — check .env}"
 RTM_JOB_ID="${RTM_JOB_ID:?RTM_JOB_ID not set — check .env}"
 POLLER_JOB_ID="${POLLER_JOB_ID:?POLLER_JOB_ID not set — check .env}"
 
-echo "=== Acme RTM Demo Teardown ==="
+echo "=== RTM to Lakebase Demo Teardown ==="
 
 # ---- 1. Cancel Databricks job runs ----
 echo ""

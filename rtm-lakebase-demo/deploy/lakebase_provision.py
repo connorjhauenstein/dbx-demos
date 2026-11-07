@@ -5,7 +5,7 @@ Usage:
     python3 deploy/lakebase_provision.py --profile <databricks-cli-profile> --instance <name>
 
 Example:
-    python3 deploy/lakebase_provision.py --profile my-profile --instance acme-rtm-demo
+    python3 deploy/lakebase_provision.py --profile my-profile --instance rtm-lakebase-demo
 """
 
 import argparse
@@ -15,7 +15,7 @@ import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--profile", required=True, help="Databricks CLI profile")
-parser.add_argument("--instance", default="acme-rtm-demo", help="Lakebase instance name")
+parser.add_argument("--instance", default="rtm-lakebase-demo", help="Lakebase instance name")
 args = parser.parse_args()
 
 PROFILE = args.profile

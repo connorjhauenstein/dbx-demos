@@ -1,15 +1,15 @@
 # Databricks notebook source
 
 # MAGIC %md
-# MAGIC # Acme RTM Demo
+# MAGIC # RTM to Lakebase Demo
 # MAGIC ## `Kafka → Spark RTM → Lakebase → {Grafana OSS, Databricks App}`
 # MAGIC
 # MAGIC | Resource | Link |
 # MAGIC |---|---|
 # MAGIC | Grafana | `http://localhost:3000` (SSH tunnel — see Pre-flight) |
 # MAGIC | Triage App | *Your app URL — see Databricks Apps in sidebar* |
-# MAGIC | RTM Job | *Search "acme-rtm-job" in Workflows* |
-# MAGIC | Alert Poller | *Search "acme-alert-poller" in Workflows* |
+# MAGIC | RTM Job | *Search "rtm-job" in Workflows* |
+# MAGIC | Alert Poller | *Search "rtm-alert-poller" in Workflows* |
 # MAGIC | EC2 (Kafka + Grafana) | *Set in `.env` as `EC2_HOST`* |
 
 # COMMAND ----------
@@ -20,17 +20,17 @@
 # MAGIC
 # MAGIC **1. Run the pre-flight script** (from your local terminal — handles IP lock + tunnel automatically):
 # MAGIC ```
-# MAGIC cd ~/code/acme-rtm-demo && ./demo_preflight.sh
+# MAGIC cd ~/code/rtm-lakebase-demo && ./demo_preflight.sh
 # MAGIC ```
 # MAGIC > This checks your current IP, updates the EC2 SSH security group if needed, and opens the Grafana tunnel on localhost:3000 in one step.
 # MAGIC
 # MAGIC **2. Verify jobs are RUNNING** — open Workflows and confirm both jobs show an active run:
-# MAGIC - `acme-rtm-job`
-# MAGIC - `acme-alert-poller`
+# MAGIC - `rtm-job`
+# MAGIC - `rtm-alert-poller`
 # MAGIC
 # MAGIC **3. Reset the scenario** (run in EC2 terminal):
 # MAGIC ```
-# MAGIC ssh -i ~/.ssh/acme-rtm-demo-key.pem ubuntu@$EC2_HOST
+# MAGIC ssh -i ~/.ssh/rtm-lakebase-demo-key.pem ubuntu@$EC2_HOST
 # MAGIC python3 ~/generator/scenario.py reset
 # MAGIC ```
 # MAGIC
@@ -44,7 +44,7 @@
 # MAGIC   count(*)                                                             AS total_rows,
 # MAGIC   max(window_start)                                                    AS latest_window,
 # MAGIC   ROUND(EXTRACT(EPOCH FROM (now() - max(window_start))) * 1000)        AS lag_ms
-# MAGIC FROM acme_rtm_lakebase.market.quote_1s
+# MAGIC FROM rtm_lakebase.market.quote_1s
 
 # COMMAND ----------
 
@@ -59,7 +59,7 @@
 # MAGIC | **Ticks/sec** | "~3,100 raw quote messages per second through RTM." |
 # MAGIC | **Rows in Lakebase** | "Climbing by ~12 per second — one row per symbol+venue per 1s window." |
 # MAGIC | **Spread by Venue** | "Four venues quoting simultaneously. Bid-ask spread in basis points — at $78k BTC, 3 bps is a ~$23 gap." |
-# MAGIC | **Acme vs Best Competitor** | "The competitive signal. Our spread vs the tightest market maker. When delta crosses 8 bps, the alert fires." |
+# MAGIC | **Primary Venue vs Best Competitor** | "The competitive signal. Our spread vs the tightest market maker. When delta crosses 8 bps, the alert fires." |
 # MAGIC | **RTM E2E Latency** | "~250ms from event generation to Lakebase write — that flat line is the RTM claim, live." |
 
 # COMMAND ----------
@@ -73,8 +73,8 @@
 # MAGIC   ROUND(depth_ask, 2)    AS depth_ask_btc,
 # MAGIC   ticks,
 # MAGIC   window_start
-# MAGIC FROM acme_rtm_lakebase.market.quote_1s
-# MAGIC WHERE window_start = (SELECT max(window_start) FROM acme_rtm_lakebase.market.quote_1s)
+# MAGIC FROM rtm_lakebase.market.quote_1s
+# MAGIC WHERE window_start = (SELECT max(window_start) FROM rtm_lakebase.market.quote_1s)
 # MAGIC ORDER BY symbol, venue
 
 # COMMAND ----------
@@ -87,7 +87,7 @@
 # MAGIC   ROUND(spread_bps, 2)             AS spread_bps,
 # MAGIC   ROUND(best_competitor_bps, 2)    AS best_competitor_bps,
 # MAGIC   ROUND(delta_bps, 2)              AS delta_bps
-# MAGIC FROM acme_rtm_lakebase.market.spread_vs_best
+# MAGIC FROM rtm_lakebase.market.spread_vs_best
 # MAGIC WHERE symbol = 'BTC-USD'
 # MAGIC   AND window_start > now() - interval '15 seconds'
 # MAGIC ORDER BY window_start DESC, venue
@@ -100,7 +100,7 @@
 # MAGIC
 # MAGIC **→ Open the RTM job source in the sidebar file browser:**
 # MAGIC
-# MAGIC `Workspace → Users → <your-username> → .bundle → acme-rtm-demo → dev → files → rtm → rtm_job.py`
+# MAGIC `Workspace → Users → <your-username> → .bundle → rtm-lakebase-demo → dev → files → rtm → rtm_job.py`
 # MAGIC
 # MAGIC **Key talking points:**
 # MAGIC - ~40 lines — the entire streaming job
@@ -125,7 +125,7 @@
 # MAGIC
 # MAGIC **Watch Grafana Panel 2** — `delta_bps` climbs above 8 bps.
 # MAGIC
-# MAGIC **Then switch to the Triage App** (find the URL in Databricks Apps → acme-triage-app).
+# MAGIC **Then switch to the Triage App** (find the URL in Databricks Apps → rtm-triage-app).
 
 # COMMAND ----------
 
@@ -133,11 +133,11 @@
 # MAGIC -- Verify the spread widened (run after triggering)
 # MAGIC SELECT
 # MAGIC   window_start,
-# MAGIC   ROUND(spread_bps, 2)           AS acme_spread_bps,
+# MAGIC   ROUND(spread_bps, 2)           AS primary_spread_bps,
 # MAGIC   ROUND(best_competitor_bps, 2)  AS best_competitor_bps,
 # MAGIC   ROUND(delta_bps, 2)            AS delta_bps
-# MAGIC FROM acme_rtm_lakebase.market.spread_vs_best
-# MAGIC WHERE symbol = 'BTC-USD' AND venue = 'acme'
+# MAGIC FROM rtm_lakebase.market.spread_vs_best
+# MAGIC WHERE symbol = 'BTC-USD' AND venue = 'primary'
 # MAGIC   AND window_start > now() - interval '15 seconds'
 # MAGIC ORDER BY window_start DESC
 # MAGIC LIMIT 10
@@ -164,7 +164,7 @@
 # MAGIC   ROUND(our_spread_bps, 2)       AS our_spread_bps,
 # MAGIC   ROUND(best_competitor_bps, 2)  AS best_competitor_bps,
 # MAGIC   status, linear_issue_id, raised_at
-# MAGIC FROM acme_rtm_lakebase.market.alerts
+# MAGIC FROM rtm_lakebase.market.alerts
 # MAGIC ORDER BY raised_at DESC
 # MAGIC LIMIT 10
 
@@ -228,7 +228,7 @@
 # MAGIC   END                                                      AS bucket,
 # MAGIC   count(*)                                                  AS windows,
 # MAGIC   ROUND(100.0 * count(*) / sum(count(*)) OVER (), 1)       AS pct
-# MAGIC FROM acme_rtm_lakebase.market.quote_1s
+# MAGIC FROM rtm_lakebase.market.quote_1s
 # MAGIC WHERE write_latency_ms IS NOT NULL
 # MAGIC   AND window_start > now() - interval '60 seconds'
 # MAGIC GROUP BY 1
@@ -248,7 +248,7 @@
 # MAGIC   window_start,
 # MAGIC   SUM(ticks)             AS total_ticks_per_second,
 # MAGIC   COUNT(DISTINCT venue)  AS active_venues
-# MAGIC FROM acme_rtm_lakebase.market.quote_1s
+# MAGIC FROM rtm_lakebase.market.quote_1s
 # MAGIC WHERE symbol = 'BTC-USD'
 # MAGIC   AND window_start > now() - interval '2 minutes'
 # MAGIC GROUP BY window_start
@@ -264,5 +264,5 @@
 # MAGIC   ROUND(our_spread_bps, 2)       AS spread_bps,
 # MAGIC   ROUND(best_competitor_bps, 2)  AS best_bps,
 # MAGIC   status, linear_issue_id, raised_at
-# MAGIC FROM acme_rtm_lakebase.market.alerts
+# MAGIC FROM rtm_lakebase.market.alerts
 # MAGIC ORDER BY raised_at DESC

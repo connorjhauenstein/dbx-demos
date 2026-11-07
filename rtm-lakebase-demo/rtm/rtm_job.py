@@ -55,6 +55,6 @@ query = (agg.writeStream
     .option("upsertkey", "symbol,venue,window_start")
     .option("checkpointLocation", CHECKPOINT)
     .trigger(realTime="5 minutes")
-    .toTable("acme_rtm_lakebase.market.quote_1s"))
+    .toTable("rtm_lakebase.market.quote_1s"))
 
 query.awaitTermination()

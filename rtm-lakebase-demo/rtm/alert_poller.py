@@ -23,7 +23,7 @@ INSERT INTO market.alerts (symbol, venue, kind, our_spread_bps, best_competitor_
 SELECT symbol, venue, 'spread_widening', spread_bps, best_competitor_bps,
        jsonb_build_object('delta_bps', delta_bps, 'window_start', window_start)
 FROM market.spread_vs_best
-WHERE venue = 'acme'
+WHERE venue = 'primary'
   AND delta_bps > %(threshold)s
   AND window_start > now() - interval '5 seconds'
   AND NOT EXISTS (

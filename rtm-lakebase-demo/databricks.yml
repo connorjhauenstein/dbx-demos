@@ -1,11 +1,11 @@
 bundle:
-  name: acme-rtm-demo
+  name: rtm-lakebase-demo
 
 variables:
   catalog:
     default: my_catalog  # replace with your Unity Catalog name
   schema:
-    default: acme_rtm
+    default: rtm_demo
   ec2_host:
     description: "EC2 public DNS for Kafka bootstrap"
   lakebase_endpoint:
@@ -28,7 +28,7 @@ targets:
 
 resources:
   schemas:
-    acme_rtm:
+    rtm_demo:
       catalog_name: ${var.catalog}
       name: ${var.schema}
 
@@ -41,7 +41,7 @@ resources:
 
   jobs:
     rtm_job:
-      name: acme-rtm-job
+      name: rtm-job
       max_concurrent_runs: 1
       tasks:
         - task_key: stream
@@ -75,7 +75,7 @@ resources:
             python_file: rtm/rtm_job.py
 
     alert_poller:
-      name: acme-alert-poller
+      name: rtm-alert-poller
       max_concurrent_runs: 1
       tasks:
         - task_key: poll
@@ -108,31 +108,31 @@ resources:
 
   apps:
     triage_app:
-      name: acme-triage-app
+      name: rtm-triage-app
       source_code_path: ./app
       resources:
         - name: lakebase_host
           secret:
-            scope: acme-rtm-demo
+            scope: rtm-lakebase-demo
             key: lakebase_host
             permission: READ
         - name: lakebase_password
           secret:
-            scope: acme-rtm-demo
+            scope: rtm-lakebase-demo
             key: lakebase_password
             permission: READ
         - name: lakebase_writer_password
           secret:
-            scope: acme-rtm-demo
+            scope: rtm-lakebase-demo
             key: lakebase_writer_password
             permission: READ
         - name: linear_api_key
           secret:
-            scope: acme-rtm-demo
+            scope: rtm-lakebase-demo
             key: linear_api_key
             permission: READ
         - name: linear_team_id
           secret:
-            scope: acme-rtm-demo
+            scope: rtm-lakebase-demo
             key: linear_team_id
             permission: READ

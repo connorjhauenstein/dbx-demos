@@ -38,9 +38,9 @@ SELECT
   window_start,
   venue,
   spread_bps,
-  MIN(spread_bps) FILTER (WHERE venue <> 'acme')
+  MIN(spread_bps) FILTER (WHERE venue <> 'primary')
     OVER (PARTITION BY symbol, window_start) AS best_competitor_bps,
-  spread_bps - MIN(spread_bps) FILTER (WHERE venue <> 'acme')
+  spread_bps - MIN(spread_bps) FILTER (WHERE venue <> 'primary')
     OVER (PARTITION BY symbol, window_start) AS delta_bps
 FROM market.quote_1s;
 

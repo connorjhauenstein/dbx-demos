@@ -16,12 +16,12 @@ EC2_INSTANCE_ID="${EC2_INSTANCE_ID:?EC2_INSTANCE_ID not set — check .env}"
 SG_ID="${EC2_SG_ID:?EC2_SG_ID not set — check .env}"
 AWS_PROFILE="${AWS_PROFILE:?AWS_PROFILE not set — check .env}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
-KEY="${EC2_KEY_PATH:-$HOME/.ssh/acme-rtm-demo-key.pem}"
+KEY="${EC2_KEY_PATH:-$HOME/.ssh/rtm-lakebase-demo-key.pem}"
 DB_PROFILE="${DATABRICKS_PROFILE:?DATABRICKS_PROFILE not set — check .env}"
 RTM_JOB_ID="${RTM_JOB_ID:?RTM_JOB_ID not set — check .env}"
 POLLER_JOB_ID="${POLLER_JOB_ID:?POLLER_JOB_ID not set — check .env}"
 
-echo "=== Acme RTM Demo Pre-flight ==="
+echo "=== RTM to Lakebase Demo Pre-flight ==="
 
 # ---- 1. Start EC2 if stopped ----
 echo ""
@@ -123,7 +123,7 @@ print('yes' if active else 'no')
     # New run needs a clean checkpoint if Kafka was reset
     if [[ "$JOB_ID" == "$RTM_JOB_ID" && "$EC2_STATE" == "stopped" ]]; then
       echo "      (EC2 was stopped — clearing stale RTM checkpoint to avoid offset errors)"
-      databricks fs rm -r "dbfs:/Volumes/${UC_CATALOG:-my_catalog}/${UC_SCHEMA:-acme_rtm}/checkpoints/rtm4" \
+      databricks fs rm -r "dbfs:/Volumes/${UC_CATALOG:-my_catalog}/${UC_SCHEMA:-rtm_demo}/checkpoints/rtm4" \
         --profile "$DB_PROFILE" 2>/dev/null || true
       databricks jobs run-now "$JOB_ID" --no-wait --profile "$DB_PROFILE" >/dev/null 2>&1
     fi
@@ -152,7 +152,7 @@ echo ""
 echo "=== Pre-flight complete ==="
 echo ""
 echo "  Grafana:    http://localhost:3000  (admin / admin)"
-echo "  Triage app: Databricks Apps → acme-triage-app"
+echo "  Triage app: Databricks Apps → rtm-triage-app"
 echo ""
 echo "  Run the pre-flight SQL cell in Demo_Runbook — lag_ms should be < 5000"
 echo "  (allow ~5 min for clusters to start if jobs were just launched)"

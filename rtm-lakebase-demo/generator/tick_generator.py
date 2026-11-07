@@ -10,10 +10,10 @@ TOPIC     = cfg.KAFKA_TOPIC
 RATE      = cfg.GEN_RATE_PER_SYMBOL
 
 SYMBOLS = ["BTC-USD", "ETH-USD", "DOGE-USD"]
-VENUES  = ["acme", "mm_a", "mm_b", "mm_c"]
+VENUES  = ["primary", "mm_a", "mm_b", "mm_c"]
 
 MID    = {"BTC-USD": 78000.0, "ETH-USD": 2467.0, "DOGE-USD": 0.086}
-BASE_SPREAD_BPS = {"acme": 3.0, "mm_a": 2.5, "mm_b": 2.0, "mm_c": 5.0}
+BASE_SPREAD_BPS = {"primary": 3.0, "mm_a": 2.5, "mm_b": 2.0, "mm_c": 5.0}
 MID_VOL = {"BTC-USD": 0.0005, "ETH-USD": 0.0006, "DOGE-USD": 0.002}
 
 STATE_FILE = pathlib.Path("/tmp/rtm_scenario.json")
@@ -43,7 +43,7 @@ while True:
         for venue in VENUES:
             if venue in s["dropped_venues"]:
                 continue
-            extra_bps = s["widened"].get(symbol, 0) if venue == "acme" else 0
+            extra_bps = s["widened"].get(symbol, 0) if venue == "primary" else 0
             half = mid[symbol] * (spread[venue] + extra_bps) / 20000
             bid, ask = mid[symbol] - half, mid[symbol] + half
             seq[symbol] += 1
