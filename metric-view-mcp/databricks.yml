@@ -1,14 +1,12 @@
 # Metric-view MCP: an MCP server that exposes only Unity Catalog metric views.
-#
-#   databricks bundle deploy -t prod --var allowed_schemas=prod.semantic --var consumer_group=analysts
-#   databricks bundle run grant_metric_view_access -t prod
-#   databricks bundle run metric_view_mcp -t prod
+# Choose which metric views in config.yml, then:
+#   databricks bundle deploy
+#   databricks bundle run grant_metric_view_access
+#   databricks bundle run metric_view_mcp
 bundle:
   name: metric_view_mcp
 
 variables:
-  allowed_schemas:
-    description: Comma-separated catalog.schema list. Only metric views in these schemas are exposed.
   consumer_group:
     description: Group allowed to use the app and query the metric views
     default: account users

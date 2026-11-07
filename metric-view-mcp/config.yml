@@ -1,0 +1,15 @@
+# Which metric views this MCP exposes: one entry per line, in any mix of
+#   "*"                       every metric view the app's service principal can see
+#   catalog                   every metric view in a catalog
+#   catalog.schema            every metric view in a schema
+#   catalog.schema.view       one metric view
+#
+# Example:
+#   include:
+#     - prod.finance.revenue_metrics
+#     - prod.finance.margin_metrics
+#     - prod.marketing              # plus every metric view in this schema
+#
+# The app and the grant job both read this file. Rerun the grant job after changing it.
+include:
+  - my_catalog.my_semantic_schema

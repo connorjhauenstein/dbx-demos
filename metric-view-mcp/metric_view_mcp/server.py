@@ -11,13 +11,14 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
 
 from .metric_views import OPERATORS, build_query
+from .scope import load_include
 from .uc import Registry, run_sql
 
 WAREHOUSE_ID = os.environ["DATABRICKS_WAREHOUSE_ID"]
 MAX_ROWS = 1000
 
 sp = WorkspaceClient()
-registry = Registry(sp, WAREHOUSE_ID, [s.strip().lower() for s in os.environ["MV_ALLOWED_SCHEMAS"].split(",")])
+registry = Registry(sp, WAREHOUSE_ID, load_include())
 
 mcp = MCPServer(
     name="metric-view-mcp",

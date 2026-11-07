@@ -1,6 +1,7 @@
 """End-to-end check of a deployed metric-view MCP.
 
-  python scripts/smoke_test.py https://<app-url>/mcp --token "$(databricks auth token -p PROFILE | jq -r .access_token)"
+  python scripts/smoke_test.py https://<app-url>/mcp --token "$(databricks auth token | jq -r .access_token)" \
+    --view <an in-scope metric view> --raw-table <a source table that must be rejected>
 """
 
 import argparse
@@ -31,7 +32,7 @@ async def main(url, token, view, raw_table):
             listed, _ = await call("list_metric_views")
             names = [v["view"].split(".")[-1] for v in listed["metric_views"]]
             print(f"      visible: {names}")
-            check("lists metric views only", view in names and "scratch_notes" not in names, names)
+            check("lists the metric view", view in names, names)
 
             desc, _ = await call("describe_metric_view", view=view)
             measure = desc["measures"][0]["name"]
@@ -44,7 +45,6 @@ async def main(url, token, view, raw_table):
 
             for label, args in [
                 ("rejects a raw source table", {"view": raw_table, "measures": ["x"]}),
-                ("rejects a plain table next to the metric views", {"view": "scratch_notes", "measures": ["note"]}),
                 ("rejects an invented measure", {"view": view, "measures": ["Revenue"]}),
             ]:
                 _, err = await call("query_metric", **args)
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("url")
     p.add_argument("--token", required=True)
-    p.add_argument("--view", default="funnel_metrics")
-    p.add_argument("--raw-table", default="main.demo_raw.app_events")
+    p.add_argument("--view", required=True, help="bare name of an in-scope metric view")
+    p.add_argument("--raw-table", required=True, help="catalog.schema.table that must be rejected")
     a = p.parse_args()
     raise SystemExit(asyncio.run(main(a.url, a.token, a.view, a.raw_table)))

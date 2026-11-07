@@ -5,6 +5,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from metric_view_mcp.metric_views import build_query, parse
+from metric_view_mcp.scope import in_scope, load_include
 from metric_view_mcp.uc import Registry
 
 VIEW = parse(json.loads((Path(__file__).parent / "funnel_metrics_table.json").read_text()))
@@ -57,12 +58,31 @@ def test_limit_is_capped():
     assert build_query(VIEW, ["Upgrade Viewers"], limit=10_000, max_rows=500)[0].endswith("LIMIT 500")
 
 
+@pytest.mark.parametrize("include, expected", [
+    (["*"], True),
+    (["prod"], True),
+    (["prod.semantic"], True),
+    (["prod.semantic.revenue"], True),
+    (["prod.finance", "dev"], False),
+    (["prod.semantic.rev"], False),
+    (["pro"], False),
+])
+def test_scope_matches_catalog_schema_or_view(include, expected):
+    assert in_scope("prod.semantic.revenue", include) is expected
+
+
+def test_load_include_reads_config(tmp_path):
+    config = tmp_path / "config.yml"
+    config.write_text("include:\n  - Prod.Semantic\n  - '*'\n")
+    assert load_include(config) == ["prod.semantic", "*"]
+
+
 def test_access_is_service_principal_ceiling_intersected_with_user():
-    registry = Registry(sp="sp", warehouse_id="w", allowed_schemas=["c.s"])
-    registry._visible = {"sp": {"c.s.a", "c.s.b"}, "user": {"c.s.b", "c.s.c"}}.get
+    registry = Registry(sp="sp", warehouse_id="w", include=["c.s"])
+    registry._visible = {"sp": {"c.s.a", "c.s.b", "c.other.x"}, "user": {"c.s.b", "c.s.c", "c.other.x"}}.get
     registry.definition = lambda name: name
     assert registry.names_for("u@x.com", "user") == {"c.s.b"}
     assert registry.get("b", "u@x.com", "user") == "c.s.b"
-    for name in ("a", "c", "c.raw.events"):
+    for name in ("a", "c", "x", "c.raw.events"):
         with pytest.raises(ToolError):
             registry.get(name, "u@x.com", "user")

@@ -1,8 +1,8 @@
 """Unity Catalog access: which metric views a caller may use, and running their queries.
 
-Access is the app service principal's view of the allowed schemas (the ceiling) intersected
-with the calling user's view (OBO). Queries run as the user, so UC enforces their grants,
-row filters, and column masks.
+Access is the app service principal's view of the metric views in config.yml (the ceiling)
+intersected with the calling user's view (OBO). Queries run as the user, so UC enforces their
+grants, row filters, and column masks.
 """
 
 import time
@@ -12,6 +12,7 @@ from databricks.sdk.service.sql import ExecuteStatementRequestOnWaitTimeout, Sta
 from mcp.server.mcpserver.exceptions import ToolError
 
 from .metric_views import MetricView, parse
+from .scope import in_scope
 
 CACHE_SECONDS = 300
 
@@ -30,8 +31,8 @@ def run_sql(client: WorkspaceClient, warehouse_id: str, sql: str, params=()) -> 
 
 
 class Registry:
-    def __init__(self, sp: WorkspaceClient, warehouse_id: str, allowed_schemas: list[str]):
-        self.sp, self.warehouse_id, self.allowed_schemas = sp, warehouse_id, allowed_schemas
+    def __init__(self, sp: WorkspaceClient, warehouse_id: str, include: list[str]):
+        self.sp, self.warehouse_id, self.include = sp, warehouse_id, include
         self._cache = {}
 
     def _cached(self, key, load):
@@ -41,19 +42,19 @@ class Registry:
         return hit[1]
 
     def _visible(self, client: WorkspaceClient) -> set[str]:
-        """Metric views in the allowed schemas that this client's identity can see."""
-        placeholders = ", ".join(f":s{i}" for i in range(len(self.allowed_schemas)))
+        """Every metric view this client's identity can see."""
         sql = (
             "SELECT lower(concat_ws('.', table_catalog, table_schema, table_name)) "
-            "FROM system.information_schema.tables WHERE table_type = 'METRIC_VIEW' "
-            f"AND lower(concat_ws('.', table_catalog, table_schema)) IN ({placeholders})"
+            "FROM system.information_schema.tables WHERE table_type = 'METRIC_VIEW'"
         )
-        params = [{"name": f"s{i}", "value": s} for i, s in enumerate(self.allowed_schemas)]
-        return {row[0] for row in run_sql(client, self.warehouse_id, sql, params)[1]}
+        return {row[0] for row in run_sql(client, self.warehouse_id, sql)[1]}
+
+    def ceiling(self) -> set[str]:
+        return self._cached("ceiling", lambda: {n for n in self._visible(self.sp) if in_scope(n, self.include)})
 
     def names_for(self, email: str, user: WorkspaceClient) -> set[str]:
         # Discovery is cached per user; queries still run as the user, so UC enforces access live.
-        return self._cached("ceiling", lambda: self._visible(self.sp)) & self._cached(email, lambda: self._visible(user))
+        return self.ceiling() & self._cached(email, lambda: self._visible(user))
 
     def definition(self, full_name: str) -> MetricView:
         return self._cached(("definition", full_name), lambda: parse(self.sp.tables.get(full_name).as_dict()))
