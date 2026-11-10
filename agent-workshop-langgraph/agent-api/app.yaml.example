@@ -1,0 +1,33 @@
+command:
+  - "python"
+  - "-m"
+  - "uvicorn"
+  - "main:app"
+  - "--host"
+  - "0.0.0.0"
+  - "--port"
+  - "8000"
+
+env:
+  - name: LAKEBASE_CONN_STR
+    valueFrom: lakebase-conn-str                    # Secret scope key — see workshop guide Step 2
+  - name: MODEL_NAME
+    value: "databricks-meta-llama-3-3-70b-instruct" # Your Foundation Model API endpoint
+  - name: MLFLOW_PROMPT_NAME
+    value: "agent-workshop-system-prompt"           # Registered from system_prompt.md on first run
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: "<YOUR_WAREHOUSE_ID>"                    # SQL warehouse ID for tool queries
+  - name: MLFLOW_EXPERIMENT_NAME
+    value: "/Shared/agent-workshop-uc"              # Experiment with UC Volume artifact location
+  # Tracing backend: "volume" (default) or "uc_tables" (preview)
+  - name: MLFLOW_TRACE_STORAGE
+    value: "volume"
+  # Only used when MLFLOW_TRACE_STORAGE=uc_tables
+  # - name: MLFLOW_UC_CATALOG
+  #   value: "<YOUR_CATALOG>"
+  # - name: MLFLOW_UC_SCHEMA
+  #   value: "<YOUR_SCHEMA>"
+  # - name: MLFLOW_UC_TABLE_PREFIX
+  #   value: "agent_traces"
+  # - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+  #   value: "<YOUR_WAREHOUSE_ID>"

@@ -1,0 +1,8 @@
+node_modules/
+.env
+.npmrc
+.mastra/
+.databricks/
+dist/
+*.log
+package-lock.json

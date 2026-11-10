@@ -1,0 +1,26 @@
+{
+  "name": "agent-workshop-mastra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript/Mastra agent deployed as a Databricks App, demonstrating the full MLflow GenAI observability and evaluation stack.",
+  "scripts": {
+    "chat": "NODE_EXTRA_CA_CERTS=$HOME/.config/corp-ca.pem tsx src/chat.ts",
+    "serve": "NODE_EXTRA_CA_CERTS=$HOME/.config/corp-ca.pem tsx src/server.ts",
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "2.0.50",
+    "@mastra/core": "1.42.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-trace-otlp-proto": "0.205.0",
+    "@opentelemetry/resources": "2.1.0",
+    "@opentelemetry/sdk-trace-node": "2.1.0",
+    "dotenv": "17.4.2",
+    "tsx": "4.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "latest"
+  }
+}

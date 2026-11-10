@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Workshop API</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23374151'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='16' font-weight='bold' fill='%23f9fafb'%3E%7B%3E%7D%3C/text%3E%3C/svg%3E" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #fafafa;
+      color: #1a1a1a;
+      line-height: 1.6;
+    }
+
+    .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+
+    h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: #6b7280; font-size: 15px; margin-bottom: 32px; }
+
+    .endpoint {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .endpoint-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 20px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .endpoint-header:hover { background: #f9fafb; }
+
+    .method {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .method-get { background: #dbeafe; color: #1d4ed8; }
+    .method-post { background: #dcfce7; color: #16a34a; }
+
+    .path { font-family: monospace; font-size: 14px; font-weight: 600; }
+    .desc { color: #6b7280; font-size: 13px; margin-left: auto; }
+
+    .endpoint-body {
+      display: none;
+      padding: 0 20px 20px;
+      border-top: 1px solid #f3f4f6;
+    }
+    .endpoint.open .endpoint-body { display: block; }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #9ca3af;
+      margin: 16px 0 8px;
+    }
+
+    pre {
+      background: #1e1e2e;
+      color: #cdd6f4;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: -1px;
+      position: relative;
+      z-index: 1;
+    }
+    .tab {
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid #e5e7eb;
+      border-bottom: none;
+      background: #f9fafb;
+      cursor: pointer;
+      border-radius: 6px 6px 0 0;
+      color: #6b7280;
+    }
+    .tab.active { background: #1e1e2e; color: #cdd6f4; border-color: #1e1e2e; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .try-btn {
+      margin-top: 12px;
+      padding: 8px 16px;
+      background: #374151;
+      color: #f9fafb;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .try-btn:hover { background: #1f2937; }
+
+    .response-box {
+      margin-top: 12px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      display: none;
+    }
+    .response-box.error { background: #fef2f2; border-color: #fecaca; }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #f3f4f6;
+      color: #374151;
+      font-weight: 500;
+    }
+
+    footer { margin-top: 40px; text-align: center; color: #9ca3af; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Agent Workshop API</h1>
+    <p class="subtitle">LangGraph agent with Lakebase conversation memory. <span class="badge">MLflow traced</span></p>
+
+    <!-- POST /chat -->
+    <div class="endpoint" id="ep-chat">
+      <div class="endpoint-header" onclick="toggle('ep-chat')">
+        <span class="method method-post">POST</span>
+        <span class="path">/chat</span>
+        <span class="desc">Send a message to the agent</span>
+      </div>
+      <div class="endpoint-body">
+        <div class="section-label">Request Body</div>
+        <pre>{ "thread_id": "string", "message": "string" }</pre>
+
+        <div class="section-label">Response</div>
+        <pre>{ "thread_id": "string", "response": "string" }</pre>
+
+        <div class="section-label">Examples</div>
+        <div class="tabs">
+          <div class="tab active" onclick="showTab('chat','curl')">curl</div>
+          <div class="tab" onclick="showTab('chat','python')">Python</div>
+          <div class="tab" onclick="showTab('chat','js')">JavaScript</div>
+        </div>
+        <div id="chat-curl" class="tab-content active">
+          <pre>curl -X POST /chat \
+  -H "Content-Type: application/json" \
+  -d '{"thread_id": "my-thread", "message": "Hello!"}'</pre>
+        </div>
+        <div id="chat-python" class="tab-content">
+          <pre>import requests
+
+resp = requests.post(f"{BASE_URL}/chat", json={
+    "thread_id": "my-thread",
+    "message": "Hello!"
+})
+print(resp.json()["response"])</pre>
+        </div>
+        <div id="chat-js" class="tab-content">
+          <pre>const resp = await fetch("/chat", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    thread_id: "my-thread",
+    message: "Hello!"
+  })
+});
+const data = await resp.json();
+console.log(data.response);</pre>
+        </div>
+
+        <button class="try-btn" onclick="tryChat()">Try it</button>
+        <div id="chat-response" class="response-box"></div>
+      </div>
+    </div>
+
+    <!-- POST /chat/stream -->
+    <div class="endpoint" id="ep-stream">
+      <div class="endpoint-header" onclick="toggle('ep-stream')">
+        <span class="method method-post">POST</span>
+        <span class="path">/chat/stream</span>
+        <span class="desc">Stream agent responses (SSE)</span>
+      </div>
+      <div class="endpoint-body">
+        <div class="section-label">Request Body</div>
+        <pre>{ "thread_id": "string", "message": "string" }</pre>
+
+        <div class="section-label">SSE Events</div>
+        <pre>data: {"event": "llm", "content": "Hello!", "tool_calls": []}
+data: {"event": "llm", "content": "", "tool_calls": [{"id": "...", "name": "query_databricks_sql", "args": {...}}]}
+data: {"event": "tools", "tool_call_id": "...", "name": "query_databricks_sql", "output": "col1 | col2\nval1 | val2"}
+data: {"event": "llm", "content": "Here are the results...", "tool_calls": []}
+data: {"event": "done", "content": "Here are the results..."}</pre>
+
+        <div class="section-label">Example</div>
+        <div class="tabs">
+          <div class="tab active" onclick="showTab('stream','curl')">curl</div>
+          <div class="tab" onclick="showTab('stream','js')">JavaScript</div>
+        </div>
+        <div id="stream-curl" class="tab-content active">
+          <pre>curl -N -X POST /chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"thread_id": "my-thread", "message": "Hello!"}'</pre>
+        </div>
+        <div id="stream-js" class="tab-content">
+          <pre>const resp = await fetch("/chat/stream", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    thread_id: "my-thread",
+    message: "What tables are available?"
+  })
+});
+
+const reader = resp.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  const lines = decoder.decode(value).split("\n");
+  for (const line of lines) {
+    if (line.startsWith("data: ")) {
+      const event = JSON.parse(line.slice(6));
+      console.log(event.event, event);
+    }
+  }
+}</pre>
+        </div>
+
+        <button class="try-btn" onclick="tryStream()">Try it</button>
+        <div id="stream-response" class="response-box"></div>
+      </div>
+    </div>
+
+    <!-- GET /history/{thread_id} -->
+    <div class="endpoint" id="ep-history">
+      <div class="endpoint-header" onclick="toggle('ep-history')">
+        <span class="method method-get">GET</span>
+        <span class="path">/history/{thread_id}</span>
+        <span class="desc">Get conversation history</span>
+      </div>
+      <div class="endpoint-body">
+        <div class="section-label">Response</div>
+        <pre>{ "messages": [{ "role": "user"|"assistant", "content": "string" }] }</pre>
+
+        <div class="section-label">Example</div>
+        <pre>curl /history/my-thread</pre>
+      </div>
+    </div>
+
+    <!-- GET /threads -->
+    <div class="endpoint" id="ep-threads">
+      <div class="endpoint-header" onclick="toggle('ep-threads')">
+        <span class="method method-get">GET</span>
+        <span class="path">/threads</span>
+        <span class="desc">List all conversation threads</span>
+      </div>
+      <div class="endpoint-body">
+        <div class="section-label">Response</div>
+        <pre>{ "threads": ["thread-id-1", "thread-id-2", ...] }</pre>
+
+        <button class="try-btn" onclick="tryThreads()">Try it</button>
+        <div id="threads-response" class="response-box"></div>
+      </div>
+    </div>
+
+    <!-- GET /config -->
+    <div class="endpoint" id="ep-config">
+      <div class="endpoint-header" onclick="toggle('ep-config')">
+        <span class="method method-get">GET</span>
+        <span class="path">/config</span>
+        <span class="desc">Get model configuration</span>
+      </div>
+      <div class="endpoint-body">
+        <div class="section-label">Response</div>
+        <pre>{ "model": "databricks-meta-llama-3-3-70b-instruct" }</pre>
+      </div>
+    </div>
+
+    <!-- GET /health -->
+    <div class="endpoint" id="ep-health">
+      <div class="endpoint-header" onclick="toggle('ep-health')">
+        <span class="method method-get">GET</span>
+        <span class="path">/health</span>
+        <span class="desc">Health check</span>
+      </div>
+      <div class="endpoint-body">
+        <div class="section-label">Response</div>
+        <pre>{ "status": "ok" }</pre>
+      </div>
+    </div>
+
+    <footer>Agent Workshop &middot; LangGraph + Lakebase + MLflow</footer>
+  </div>
+
+  <script>
+    function toggle(id) {
+      document.getElementById(id).classList.toggle('open');
+    }
+
+    function showTab(group, tab) {
+      document.querySelectorAll(`#ep-${group} .tab`).forEach(t => t.classList.remove('active'));
+      document.querySelectorAll(`#ep-${group} .tab-content`).forEach(c => c.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById(`${group}-${tab}`).classList.add('active');
+    }
+
+    async function tryChat() {
+      const box = document.getElementById('chat-response');
+      box.style.display = 'block';
+      box.className = 'response-box';
+      box.textContent = 'Sending...';
+      try {
+        const resp = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ thread_id: 'api-docs-test', message: 'Hello! What can you help with?' })
+        });
+        const data = await resp.json();
+        box.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        box.className = 'response-box error';
+        box.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    async function tryStream() {
+      const box = document.getElementById('stream-response');
+      box.style.display = 'block';
+      box.className = 'response-box';
+      box.textContent = '';
+      try {
+        const resp = await fetch('/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ thread_id: 'api-docs-stream-test', message: 'Hello! What can you help with?' })
+        });
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value);
+          const lines = text.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const event = JSON.parse(line.slice(6));
+                box.textContent += event.event + ': ' + JSON.stringify(event, null, 2) + '\n\n';
+              } catch (e) {}
+            }
+          }
+        }
+      } catch (e) {
+        box.className = 'response-box error';
+        box.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    async function tryThreads() {
+      const box = document.getElementById('threads-response');
+      box.style.display = 'block';
+      box.className = 'response-box';
+      box.textContent = 'Loading...';
+      try {
+        const resp = await fetch('/threads');
+        const data = await resp.json();
+        box.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        box.className = 'response-box error';
+        box.textContent = 'Error: ' + e.message;
+      }
+    }
+  </script>
+</body>
+</html>

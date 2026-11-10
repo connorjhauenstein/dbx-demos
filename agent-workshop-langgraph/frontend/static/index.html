@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Workshop</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23374151'/%3E%3Cpath d='M7 10h18v2H7zm0 5h18v2H7zm0 5h12v2H7z' fill='%23f9fafb'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div id="sidebar-header">
+      <div id="sidebar-header-content">
+        <div id="sidebar-title">Agent Workshop</div>
+        <div id="sidebar-subtitle">Lakebase + LangGraph</div>
+      </div>
+    </div>
+    <button id="new-chat-btn" onclick="newChat()">+ New conversation</button>
+    <div id="recent-label">Recent</div>
+    <div id="thread-list"></div>
+  </nav>
+
+  <!-- Main chat area -->
+  <main id="main">
+    <header id="chat-header">
+      <button id="chat-header-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
+        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="2" width="14" height="2" rx="1"/>
+          <rect x="1" y="7" width="14" height="2" rx="1"/>
+          <rect x="1" y="12" width="14" height="2" rx="1"/>
+        </svg>
+      </button>
+      <span id="model-badge">Loading...</span>
+      <span id="thread-badge">No thread selected</span>
+    </header>
+
+    <div id="body-area">
+    <div id="welcome">
+      <div id="welcome-title">What can I help with?</div>
+      <div id="welcome-subtitle">memory persisted to Lakebase</div>
+    </div>
+
+    <div id="messages">
+      <div id="empty-state">
+        <svg class="empty-icon" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" fill="#6b7280">
+          <path d="M20 4C11.163 4 4 10.716 4 19c0 3.37 1.11 6.49 2.99 9.03L5 35l7.3-1.93C14.64 34.33 17.26 35 20 35c8.837 0 16-6.716 16-15S28.837 4 20 4z"/>
+        </svg>
+        <div class="empty-title">Start a conversation</div>
+        <div class="empty-subtitle">Messages are persisted to Lakebase — select a past thread or start a new one.</div>
+      </div>
+    </div>
+
+    <div id="input-area">
+      <div id="input-row">
+        <textarea
+          id="user-input"
+          rows="1"
+          placeholder="Message the agent..."
+          oninput="autoResize(this)"
+          onkeydown="handleKey(event)"
+        ></textarea>
+        <button id="send-btn" onclick="sendMessage()" title="Send">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    </div> <!-- #body-area -->
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

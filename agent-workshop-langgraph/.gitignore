@@ -1,0 +1,5 @@
+# App config with workspace-specific values (copy from app.yaml.example)
+app.yaml
+.databricks/
+.env
+__pycache__/

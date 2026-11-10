@@ -1,0 +1,17 @@
+command: ["npm", "run", "start"]
+
+env:
+  - name: DATABRICKS_HOST
+    value: "https://<your-workspace>.cloud.databricks.com"
+  - name: DATABRICKS_MODEL
+    value: "databricks-claude-sonnet-4-6"
+  - name: MLFLOW_EXPERIMENT_ID
+    value: "<your-mlflow-experiment-id>"
+  - name: MLFLOW_UC_TRACE_TABLE
+    value: "<catalog>.<schema>.agent_traces_otel_spans"
+  - name: MLFLOW_PROMPT_NAME
+    value: "<catalog>.<schema>.system_prompt"
+  - name: MLFLOW_PROMPT_ALIAS
+    value: "production"
+# Databricks Apps injects DATABRICKS_APP_PORT and OAuth service-principal
+# credentials (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET) automatically.

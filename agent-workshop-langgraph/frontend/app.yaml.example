@@ -1,0 +1,13 @@
+command:
+  - "python"
+  - "-m"
+  - "uvicorn"
+  - "main:app"
+  - "--host"
+  - "0.0.0.0"
+  - "--port"
+  - "8000"
+
+env:
+  - name: AGENT_API_URL
+    value: "<YOUR_AGENT_API_APP_URL>"  # e.g., https://agent-workshop-api-xxxxx.aws.databricksapps.com
