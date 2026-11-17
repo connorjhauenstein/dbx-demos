@@ -1,8 +1,7 @@
-"""Jobs built from the repo at deploy time.
+"""A job and an MLflow experiment for each folder in tasks/, built at deploy time.
 
-- One job per file in tasks/: runs the task with the agent named in its frontmatter, on its schedule, with its tags.
-- One MLflow experiment per task, with traces stored in Unity Catalog: every run of the task, from any agent, lands there.
-- One compare_agents job: runs any task with every agent in agents/, in parallel, for side-by-side results.
+The job runs the task with the harness and model from its task.yml, on its schedule, with its tags. Override them per
+run with --params harness=...,model=... to compare. Every run of a task lands in its experiment, with traces in Unity Catalog.
 """
 from pathlib import Path
 
@@ -11,83 +10,60 @@ from databricks.bundles.core import Bundle, Resources
 from databricks.bundles.experiments import MlflowExperiment
 from databricks.bundles.jobs import Job
 
-ROOT = Path(__file__).parent.parent
+TASKS = sorted(p for p in (Path(__file__).parent.parent / "tasks").iterdir() if p.is_dir())
 EXPERIMENTS = "${workspace.root_path}/traces-"  # experiment per task: <EXPERIMENTS><task>
-TASKS = sorted((ROOT / "tasks").glob("*.md"))
-AGENTS = sorted(p.stem for p in (ROOT / "agents").glob("*.yml"))
-
-
-def run_agent(task_key: str, agent: str) -> dict:
-    return {
-        "task_key": task_key,
-        "environment_key": "default",
-        "spark_python_task": {
-            "python_file": "src/run_task.py",
-            "parameters": [
-                "${workspace.file_path}",
-                "{{job.parameters.task}}",
-                agent,
-                "${var.platform_schema}",
-                EXPERIMENTS,
-                "{{job.run_id}}",
-            ],
-        },
-    }
-
-
-def job(name: str, parameters: list[dict], tasks: list[dict], **extra) -> Job:
-    return Job.from_dict(
-        {
-            "name": name,
-            "run_as": {"service_principal_name": "${var.service_principal}"},
-            "parameters": parameters,
-            "environments": [
-                {"environment_key": "default", "spec": {"client": "4", "dependencies": ["pyyaml", "mlflow-skinny>=3.14"]}}
-            ],
-            "tasks": tasks,
-            **extra,
-        }
-    )
 
 
 def load_resources(bundle: Bundle) -> Resources:
     resources = Resources()
-    for path in TASKS:
-        meta = yaml.safe_load(path.read_text().split("---", 2)[1])
+    for task in TASKS:
+        config = yaml.safe_load((task / "task.yml").read_text())
+        key = task.name.replace("-", "_")
         resources.add_mlflow_experiment(
-            path.stem.replace("-", "_"),
+            key,
             MlflowExperiment.from_dict(
                 {
-                    "name": f"{EXPERIMENTS}{path.stem}",
+                    "name": f"{EXPERIMENTS}{task.name}",
                     "trace_location": {
-                        "uc_trace_location": {
-                            "catalog": "${var.trace_catalog}",
-                            "schema": "${var.trace_schema}",
-                            "table_prefix": path.stem.replace("-", "_"),
-                        }
+                        "uc_trace_location": {"catalog": "${var.trace_catalog}", "schema": "${var.trace_schema}", "table_prefix": key}
                     },
                     "permissions": [{"service_principal_name": "${var.service_principal}", "level": "CAN_EDIT"}],
                 }
             ),
         )
-        extra = {"tags": {"task": path.stem} | meta.get("tags", {})}
-        if "schedule" in meta:
-            extra["schedule"] = meta["schedule"]
         resources.add_job(
-            path.stem.replace("-", "_"),
-            job(
-                f"agent-task-{path.stem}",
-                [{"name": "task", "default": path.stem}, {"name": "agent", "default": meta["agent"]}],
-                [run_agent("run_agent", "{{job.parameters.agent}}")],
-                **extra,
+            key,
+            Job.from_dict(
+                {
+                    "name": f"agent-task-{task.name}",
+                    "run_as": {"service_principal_name": "${var.service_principal}"},
+                    "tags": {"task": task.name} | config.get("tags", {}),
+                    "parameters": [
+                        {"name": "harness", "default": config["harness"]},
+                        {"name": "model", "default": config["model"]},
+                    ],
+                    "environments": [
+                        {"environment_key": "default", "spec": {"client": "4", "dependencies": ["pyyaml", "mlflow-skinny>=3.14"]}}
+                    ],
+                    "tasks": [
+                        {
+                            "task_key": "run_agent",
+                            "environment_key": "default",
+                            "spark_python_task": {
+                                "python_file": "src/run_task.py",
+                                "parameters": [
+                                    "${workspace.file_path}",
+                                    task.name,
+                                    "{{job.parameters.harness}}",
+                                    "{{job.parameters.model}}",
+                                    EXPERIMENTS,
+                                    "{{job.run_id}}",
+                                ],
+                            },
+                        }
+                    ],
+                }
+                | ({"schedule": config["schedule"]} if "schedule" in config else {})
             ),
         )
-    resources.add_job(
-        "compare_agents",
-        job(
-            "agent-task-compare",
-            [{"name": "task", "default": TASKS[0].stem}],
-            [run_agent(agent.replace("-", "_"), agent) for agent in AGENTS],
-        ),
-    )
     return resources

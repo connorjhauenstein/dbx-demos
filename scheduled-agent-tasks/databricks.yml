@@ -1,5 +1,5 @@
-# Scheduled agent tasks. Each task names an agent (agents/), the Unity Gateway MCPs and skills it needs, and its cost tags.
-# Shared MCPs and skills are deployed separately from platform/.
+# Scheduled agent tasks: a job and an MLflow experiment for each folder in tasks/.
+# MCPs are managed in Unity Gateway; tasks list the ones they use by name.
 bundle:
   name: scheduled-agent-tasks
 
@@ -8,15 +8,9 @@ python:
   resources:
     - "resources:load_resources"
 
-sync:
-  exclude:
-    - platform/**
-
 variables:
   service_principal:
     description: Application ID of the service principal the agents run as
-  platform_schema:
-    description: Catalog and schema of the shared MCPs and skills (catalog.schema). Task names without a catalog resolve here.
   trace_catalog:
     description: Catalog for the MLflow trace tables
   trace_schema:

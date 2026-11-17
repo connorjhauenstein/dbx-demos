@@ -1,5 +1,5 @@
--- Estimated list cost per agent run: one row per job run and agent, with the run's tags.
---   compute_usd: serverless job compute, billed per job run. A compare_agents run shares one job run across agents.
+-- Estimated list cost per agent run: one row per job run, with the run's tags.
+--   compute_usd: serverless job compute, billed per job run.
 --   model_usd:   model usage is billed per hour, model, and caller. It's split across that hour's calls by tokens,
 --                using the Unity Gateway request tags that run_task.py adds to every call.
 -- List prices, not discounted. Billing and usage tables can lag by a few hours.
@@ -35,7 +35,8 @@ calls AS (
 SELECT
   c.request_tags['job_run_id'] AS job_run_id,
   c.request_tags['task'] AS task,
-  c.request_tags['agent'] AS agent,
+  c.request_tags['harness'] AS harness,
+  c.request_tags['model'] AS model,
   any_value(c.request_tags) AS tags,
   SUM(c.total_tokens) AS model_tokens,
   ROUND(SUM(b.usd * c.total_tokens / c.hour_tokens), 4) AS model_usd,
@@ -44,5 +45,5 @@ FROM calls c
 LEFT JOIN model_billed b USING (hour, model, caller)
 LEFT JOIN compute j ON j.job_run_id = c.request_tags['job_run_id']
 WHERE c.request_tags['job_run_id'] IS NOT NULL
-GROUP BY 1, 2, 3
-ORDER BY job_run_id DESC, agent;
+GROUP BY 1, 2, 3, 4
+ORDER BY job_run_id DESC;

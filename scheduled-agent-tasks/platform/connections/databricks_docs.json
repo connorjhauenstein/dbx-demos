@@ -1,6 +1,0 @@
-{
-  "name": "databricks_docs",
-  "connection_type": "HTTP",
-  "comment": "Databricks Developer Docs MCP (public). It needs no credentials, but HTTP connections require a bearer token, so this one is a placeholder.",
-  "options": {"host": "https://developers.databricks.com", "port": "443", "base_path": "/api/mcp", "bearer_token": "unused"}
-}

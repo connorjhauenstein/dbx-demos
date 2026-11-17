@@ -1,0 +1,10 @@
+harness: claude                  # claude or opencode
+model: system.ai.claude-sonnet-5-5
+mcps: [system.ai.dbsql]          # Unity Gateway MCP services the agent may use
+tags:                            # added to the job, every gateway request, and the MLflow trace
+  team: data-platform
+  cost_center: finops
+schedule:                        # optional; passed to the job as-is
+  quartz_cron_expression: "0 0 8 ? * MON"
+  timezone_id: America/Los_Angeles
+  pause_status: PAUSED

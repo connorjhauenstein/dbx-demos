@@ -1,19 +1,8 @@
----
-name: databricks-billing
-description: Compute and compare Databricks spend week over week from billing data (system.billing.usage or a pre-aggregated copy with list_cost_usd), in one query. Use for any cost, spend, DBU, or week-over-week billing question.
----
+Review this account's Databricks spend week over week, and reply with a short summary.
 
-# Databricks billing: week-over-week spend
+Run this query once with the `execute_sql` tool (poll with `poll_sql_result` if it's still pending). It returns everything
+the summary needs. Don't explore schemas first, and don't use a shell or CLI.
 
-Answer with **one query**: the query below returns everything a week-over-week review needs. Don't explore schemas or
-list tables first, and don't split the analysis across many queries. Run a follow-up query only if the result
-raises a question the summary can't answer, such as which workspace drives a growing SKU.
-
-## 1. Pick the `costs` source
-
-Use exactly one of these as the first CTE. Both produce one row per usage record with an estimated list `cost`.
-
-From `system.billing.usage`, priced with the list price valid on the usage date:
 ```sql
 WITH costs AS (
   SELECT u.usage_date, u.workspace_id, u.sku_name, u.billing_origin_product, u.usage_quantity * p.pricing.default AS cost
@@ -24,22 +13,6 @@ WITH costs AS (
    AND (p.price_end_time IS NULL OR u.usage_date < CAST(p.price_end_time AS DATE))
   WHERE u.usage_date >= current_date() - 21
 ),
-```
-
-From a pre-aggregated table that already has `list_cost_usd` (the task names it):
-```sql
-WITH costs AS (
-  SELECT usage_date, workspace_id, sku_name, billing_origin_product, list_cost_usd AS cost
-  FROM <catalog>.<schema>.<table>
-),
-```
-
-## 2. Append this and run it
-
-The current week is the 7 days ending the day before the latest `usage_date`, because the latest day may be incomplete.
-The prior week is the 7 days before that.
-
-```sql
 weekly AS (
   SELECT c.*, w.current_to,
          CASE WHEN usage_date > w.current_to - 7 THEN 'current' ELSE 'prior' END AS week
@@ -65,14 +38,14 @@ QUALIFY level IN ('total', 'product')
 ORDER BY CASE level WHEN 'total' THEN 0 WHEN 'workspace_sku' THEN 1 WHEN 'product' THEN 2 ELSE 3 END, current_week DESC NULLS LAST
 ```
 
+The current week is the 7 days ending the day before the latest `usage_date`, because the latest day may be incomplete.
 Result rows, by `level`:
 - `total`: both weeks' spend and `change_pct`, with `current_from` and `current_to`.
 - `workspace_sku`: the 5 largest `workspace_id` + `sku_name` pairs this week. The first row is the top cost driver.
 - `product`: every `billing_origin_product`.
 - `sku`: SKUs that grew more than 25% week over week, and new SKUs (`prior_week` is null).
 
-## 3. Report
-
-- State both date ranges, and say "estimated list cost": list prices don't reflect discounts or commitments.
+In the summary:
+- State both date ranges, and call it "estimated list cost": list prices don't reflect discounts or commitments.
+- Give the total and its change, the top driver and its change, notable growth, and one recommended action.
 - Report growth only where the prior week had spend. Call out new SKUs separately.
-- Keep it short: total and change, top driver and its change, notable growth, one recommended action.
