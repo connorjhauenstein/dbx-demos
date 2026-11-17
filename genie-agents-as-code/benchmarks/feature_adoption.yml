@@ -1,0 +1,17 @@
+metric_view: "{schema}.feature_adoption"
+questions:
+  - name: top_feature_week_of_march_2
+    question: Which feature had the most users in the week of March 2, 2026?
+    sql: |
+      SELECT feature, MEASURE(feature_users) AS users
+      FROM {schema}.feature_adoption
+      WHERE week = DATE'2026-03-02'
+      GROUP BY feature
+      ORDER BY users DESC
+      LIMIT 1
+  - name: how_many_users_used_the_export_feature_in_the_week_of_march
+    question: How many users used the export feature in the week of March 2, 2026?
+    sql: |
+      SELECT MEASURE(feature_users) AS users
+      FROM {schema}.feature_adoption
+      WHERE week = DATE'2026-03-02' AND feature = 'export'

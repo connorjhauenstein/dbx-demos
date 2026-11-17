@@ -1,0 +1,15 @@
+metric_view: "{schema}.subscription_metrics"
+questions:
+  - name: new_mrr_by_plan_march
+    question: What was new MRR by plan for subscriptions started in March 2026?
+    sql: |
+      SELECT plan, MEASURE(mrr) AS new_mrr
+      FROM {schema}.subscription_metrics
+      WHERE start_month = DATE'2026-03-01'
+      GROUP BY plan
+  - name: new_subscriptions_february
+    question: How many new subscriptions started in February 2026?
+    sql: |
+      SELECT MEASURE(new_subscriptions) AS new_subscriptions
+      FROM {schema}.subscription_metrics
+      WHERE start_month = DATE'2026-02-01'

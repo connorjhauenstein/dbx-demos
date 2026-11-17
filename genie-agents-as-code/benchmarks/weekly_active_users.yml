@@ -1,0 +1,15 @@
+metric_view: "{schema}.weekly_active_users"
+questions:
+  - name: wau_week_of_march_2
+    question: How many weekly active users did we have in the week of March 2, 2026?
+    sql: |
+      SELECT MEASURE(active_users) AS weekly_active_users
+      FROM {schema}.weekly_active_users
+      WHERE week = DATE'2026-03-02'
+  - name: wau_by_platform_week_of_march_2
+    question: What were weekly active users by platform in the week of March 2, 2026?
+    sql: |
+      SELECT platform, MEASURE(active_users) AS weekly_active_users
+      FROM {schema}.weekly_active_users
+      WHERE week = DATE'2026-03-02'
+      GROUP BY platform

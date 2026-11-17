@@ -1,0 +1,15 @@
+# One entry per folder in agents/. The resource key must match the folder name.
+# Run build.py first: it writes the .build/*.geniespace.json files referenced here.
+resources:
+  genie_spaces:
+    growth:
+      title: Growth Analyst
+      description: Engagement and feature adoption questions, answered from metric views.
+      warehouse_id: ${var.warehouse_id}
+      file_path: ../.build/growth.geniespace.json
+
+    monetization:
+      title: Monetization Analyst
+      description: Subscription and revenue questions, answered from metric views.
+      warehouse_id: ${var.warehouse_id}
+      file_path: ../.build/monetization.geniespace.json

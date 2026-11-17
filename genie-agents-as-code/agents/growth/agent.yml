@@ -1,0 +1,7 @@
+metric_views:
+  - "{schema}.feature_adoption"
+  - "{schema}.weekly_active_users"
+sample_questions:
+  - How many weekly active users did we have last week?
+  - Which features are growing fastest?
+  - Which platform has the most weekly active users?
