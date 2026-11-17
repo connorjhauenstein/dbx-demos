@@ -1,0 +1,29 @@
+# Shared, governed agent resources in Unity Gateway. Deployed by a platform team or admin.
+# Tasks reference these by Unity Catalog name; they're also usable from any other Unity Gateway client.
+bundle:
+  name: agent-platform
+  engine: direct
+
+variables:
+  schema:
+    description: Catalog and schema that holds the shared MCP services, connections, and skills (catalog.schema)
+  agents_principal:
+    description: Service principal application ID or group name that may use them
+
+resources:
+  mcp_services:
+    ms_learn:
+      parent: schemas/${var.schema}
+      mcp_service_id: ms_learn
+      comment: Microsoft Learn docs, including Azure Databricks documentation. Public, no credentials.
+      config:
+        source_connection:
+          name: connections/${var.schema}.ms_learn
+        include_tool_selectors: [microsoft_docs_search, microsoft_docs_fetch]
+      grants:
+        - principal: ${var.agents_principal}
+          privileges: [EXECUTE]
+
+targets:
+  dev:
+    default: true

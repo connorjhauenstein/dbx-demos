@@ -1,6 +1,0 @@
-{
-  "model": "system.ai.claude-sonnet-5-5",
-  "permissions": {
-    "allow": ["mcp__dbsql__execute_sql", "mcp__dbsql__poll_sql_result"]
-  }
-}
