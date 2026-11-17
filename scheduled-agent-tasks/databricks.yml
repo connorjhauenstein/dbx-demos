@@ -1,4 +1,4 @@
-# Scheduled agent tasks. Each task names an agent (agents/), and the Unity Gateway MCPs and skills it needs.
+# Scheduled agent tasks. Each task names an agent (agents/), the Unity Gateway MCPs and skills it needs, and its cost tags.
 # Shared MCPs and skills are deployed separately from platform/.
 bundle:
   name: scheduled-agent-tasks
@@ -17,10 +17,28 @@ variables:
     description: Application ID of the service principal the agents run as
   platform_schema:
     description: Catalog and schema of the shared MCPs and skills (catalog.schema). Task names without a catalog resolve here.
+  trace_catalog:
+    description: Catalog for the MLflow trace tables
+  trace_schema:
+    description: Schema for the MLflow trace tables
 
 permissions:
   - service_principal_name: ${var.service_principal}
     level: CAN_VIEW
+
+resources:
+  experiments:
+    agent_tasks:
+      # One trace per agent run, tagged with task, agent, model, job_run_id, and the task's cost tags.
+      name: ${workspace.root_path}/agent-tasks
+      trace_location:
+        uc_trace_location:
+          catalog: ${var.trace_catalog}
+          schema: ${var.trace_schema}
+          table_prefix: agent_tasks
+      permissions:
+        - service_principal_name: ${var.service_principal}
+          level: CAN_EDIT
 
 targets:
   dev:

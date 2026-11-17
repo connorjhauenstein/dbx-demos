@@ -1,5 +1,8 @@
 ---
 agent: claude-sonnet
+tags:                                   # cost tags: job tags, gateway request tags, and MLflow trace tags
+  team: data-platform
+  cost_center: finops
 mcps:                                   # Unity Gateway MCP services, and the tools this task may call
   system.ai.dbsql: [execute_sql, poll_sql_result]
   ms_learn: [microsoft_docs_search]     # names without a catalog resolve to the platform schema

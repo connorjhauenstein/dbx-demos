@@ -9,13 +9,16 @@ platform/   deployed by a platform team or admin (bundle + script)
   databricks.yml       MCP services: connection, allowed tools, grants      → Unity Gateway: MCPs
   skills/<name>/       shared instructions (SKILL.md)                        → Unity Gateway: skills
 agents/     agent setups: harness + model                                    claude-sonnet.yml, codex-glm.yml, …
-tasks/      prompts; frontmatter picks agent, MCPs + tools, skills, schedule  cost-review.md
+tasks/      prompts; frontmatter picks agent, MCPs + tools, skills, tags, schedule   cost-review.md
+sql/        cost per agent run                                               agent_run_costs.sql
      │
      ▼  databricks bundle deploy  (resources/__init__.py builds the jobs)
 agent-task-<task>    one job per task: runs it with its default agent, on its schedule
 agent-task-compare   runs any task with every agent in parallel, for side-by-side answers
+agent-tasks          MLflow experiment, traces stored in Unity Catalog
      │
-     ▼  src/run_task.py  (writes the harness's own config, with only the task's tools allowed)
+     ▼  src/run_task.py  (writes the harness's own config, with only the task's tools allowed, tags every call,
+     │                    and records the run as one MLflow trace)
 Unity Gateway, as the service principal
   ├─ /ai-gateway/anthropic            Claude Code, OpenCode  → Claude or open-source models
   ├─ /ai-gateway/codex/v1             Codex                  → open-source models
@@ -43,7 +46,8 @@ through the DBSQL MCP. It then links a supporting doc found with the example pla
 2. **A service principal** for the agents with:
    - the `workspace-access` and `databricks-sql-access` entitlements (the gateway rejects tokens without them),
    - `SELECT` on the data the tasks query (for the example: `system.billing.usage` and `system.billing.list_prices`),
-   - `USE CATALOG` and `USE SCHEMA` on the platform schema, and access to the model services the agents use.
+   - `USE CATALOG` and `USE SCHEMA` on the platform schema, and access to the model services the agents use,
+   - `USE CATALOG`, `USE SCHEMA`, `SELECT`, and `MODIFY` on the trace schema (`ALL PRIVILEGES` alone isn't enough for trace tables).
 3. **You** need the *Service Principal: User* role on that service principal so the jobs can run as it
    (**Settings → Identity and access → Service principals → \<name\> → Permissions**).
 4. Recommended: set `disallow_writes=true` in `system.ai.dbsql_policy` so agents can only read.
@@ -56,6 +60,7 @@ through the DBSQL MCP. It then links a supporting doc found with the example pla
 export DATABRICKS_CONFIG_PROFILE=<profile>
 export PLATFORM_SCHEMA=<catalog>.<schema>                     # holds shared MCPs, connections, and skills
 export AGENTS_SP=<service principal application ID>
+export TRACE_CATALOG=<catalog> TRACE_SCHEMA=<schema>          # MLflow trace tables
 ```
 
 ## 1. Deploy the platform (MCPs and skills)
@@ -82,6 +87,7 @@ To give a team access as well, grant a group `EXECUTE` on an MCP service (add it
 
 ```bash
 export BUNDLE_VAR_service_principal=$AGENTS_SP BUNDLE_VAR_platform_schema=$PLATFORM_SCHEMA
+export BUNDLE_VAR_trace_catalog=$TRACE_CATALOG BUNDLE_VAR_trace_schema=$TRACE_SCHEMA
 
 databricks bundle deploy
 databricks bundle run cost_review                                  # the task's default agent
@@ -89,8 +95,29 @@ databricks bundle run cost_review --params agent=opencode-kimi     # the same ta
 databricks bundle run compare_agents --params task=cost-review     # every agent, in parallel
 ```
 
-Each agent's answer appears in its task's run output. With unified tracing set up (**Govern → Traces**), every model and MCP call
-is recorded as a span, including full prompts, responses, tool arguments, and results, with the service principal as `enduser.id`.
+Each agent's answer appears in its task's run output, followed by its MLflow trace ID.
+
+## Traces and costs
+
+Every run gets the same tags: `task`, `agent`, `model`, `job_run_id`, plus the task's own `tags:` (for example `team` and
+`cost_center`, matching your cost-attribution taxonomy). They're applied in four places:
+
+| Where | What you get |
+|---|---|
+| **MLflow experiment `agent-tasks`** (stored as Unity Catalog tables) | One trace per run: the prompt, the answer, token counts, and a span for each tool call. Filter by `agent` or `task` in the MLflow UI, or query `<prefix>_trace_unified` with SQL. |
+| **Unity Gateway request tags** (a header on every model and MCP call) | `system.ai_gateway.usage.request_tags`, and `databricks.request_tags` on each span in the unified trace table if your metastore has it (**Govern → Traces**): full prompts, responses, tool arguments, and results. |
+| **Job tags** | `system.lakeflow.jobs.tags`, to join with job compute in `system.billing.usage`. For tags directly in billing `custom_tags`, set a serverless usage policy on the jobs. |
+| **`sql/agent_run_costs.sql`** | Estimated list cost per run and agent: exact job compute per job run, plus model cost split by tokens. |
+
+Compare agents on one task by filtering the experiment on `task`, or with SQL:
+
+```sql
+SELECT tags['agent'] AS agent, state, execution_duration_ms / 1000 AS seconds, size(spans) AS spans, response
+FROM <trace_catalog>.<trace_schema>.agent_tasks_trace_unified
+WHERE tags['job_run_id'] = '<compare_agents run ID>';
+```
+
+The usage and billing tables can lag by a few hours. MLflow traces and gateway spans arrive within minutes.
 
 ## Add a task
 
@@ -103,6 +130,9 @@ mcps:                                             # Unity Gateway MCP services �
   system.ai.dbsql: [execute_sql, poll_sql_result]
   ms_learn: [microsoft_docs_search]               # names without a catalog resolve to the platform schema
 skills: [databricks-billing]                      # loaded first through /ai-gateway/skills/
+tags:                                             # added to the job, every gateway request, and the MLflow trace
+  team: data-platform
+  cost_center: finops
 schedule:                                         # optional; passed to the job as-is
   quartz_cron_expression: "0 0 8 ? * MON"
   timezone_id: America/Los_Angeles
@@ -122,7 +152,8 @@ Create `agents/<name>.yml` with a `harness` (`claude`, `codex`, or `opencode`) a
 - `codex` calls `/ai-gateway/codex/v1` and needs a model that supports the Responses API.
 
 Before switching a task to a cheaper agent, run the compare job and check the answers against a direct query.
-In testing, open-source models sometimes drifted from the requested date window or ranked line items wrongly. A skill that states the rules helped.
+In testing, open-source models sometimes drifted from the requested date window or ranked line items wrongly. A skill that states the rules helped,
+but only when the agent loaded it: the trace shows whether it called `load_skill`.
 
 ## Add an MCP (for example Jira or Slack)
 
