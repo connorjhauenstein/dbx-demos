@@ -1,6 +1,0 @@
-{
-  "name": "ms_learn",
-  "connection_type": "HTTP",
-  "comment": "Public MCP server. It needs no credentials, but HTTP connections require a bearer token, so this one is a placeholder.",
-  "options": {"host": "https://learn.microsoft.com", "port": "443", "base_path": "/api/mcp", "bearer_token": "unused"}
-}

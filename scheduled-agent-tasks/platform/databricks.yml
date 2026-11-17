@@ -12,14 +12,14 @@ variables:
 
 resources:
   mcp_services:
-    ms_learn:
+    databricks_docs:
       parent: schemas/${var.schema}
-      mcp_service_id: ms_learn
-      comment: Microsoft Learn docs, including Azure Databricks documentation. Public, no credentials.
+      mcp_service_id: databricks_docs
+      comment: Databricks Developer Docs (Apps, Agent Bricks, Unity Gateway, Lakebase, Jobs). Public, read-only.
       config:
         source_connection:
-          name: connections/${var.schema}.ms_learn
-        include_tool_selectors: [microsoft_docs_search, microsoft_docs_fetch]
+          name: connections/${var.schema}.databricks_docs
+        include_tool_selectors: [list_docs_resources, get_doc_resource]
       grants:
         - principal: ${var.agents_principal}
           privileges: [EXECUTE]

@@ -1,15 +1,18 @@
 """Jobs built from the repo at deploy time.
 
 - One job per file in tasks/: runs the task with the agent named in its frontmatter, on its schedule, with its tags.
+- One MLflow experiment per task, with traces stored in Unity Catalog: every run of the task, from any agent, lands there.
 - One compare_agents job: runs any task with every agent in agents/, in parallel, for side-by-side results.
 """
 from pathlib import Path
 
 import yaml
 from databricks.bundles.core import Bundle, Resources
+from databricks.bundles.experiments import MlflowExperiment
 from databricks.bundles.jobs import Job
 
 ROOT = Path(__file__).parent.parent
+EXPERIMENTS = "${workspace.root_path}/traces-"  # experiment per task: <EXPERIMENTS><task>
 TASKS = sorted((ROOT / "tasks").glob("*.md"))
 AGENTS = sorted(p.stem for p in (ROOT / "agents").glob("*.yml"))
 
@@ -25,7 +28,7 @@ def run_agent(task_key: str, agent: str) -> dict:
                 "{{job.parameters.task}}",
                 agent,
                 "${var.platform_schema}",
-                "${resources.experiments.agent_tasks.id}",
+                EXPERIMENTS,
                 "{{job.run_id}}",
             ],
         },
@@ -51,6 +54,22 @@ def load_resources(bundle: Bundle) -> Resources:
     resources = Resources()
     for path in TASKS:
         meta = yaml.safe_load(path.read_text().split("---", 2)[1])
+        resources.add_mlflow_experiment(
+            path.stem.replace("-", "_"),
+            MlflowExperiment.from_dict(
+                {
+                    "name": f"{EXPERIMENTS}{path.stem}",
+                    "trace_location": {
+                        "uc_trace_location": {
+                            "catalog": "${var.trace_catalog}",
+                            "schema": "${var.trace_schema}",
+                            "table_prefix": path.stem.replace("-", "_"),
+                        }
+                    },
+                    "permissions": [{"service_principal_name": "${var.service_principal}", "level": "CAN_EDIT"}],
+                }
+            ),
+        )
         extra = {"tags": {"task": path.stem} | meta.get("tags", {})}
         if "schedule" in meta:
             extra["schedule"] = meta["schedule"]

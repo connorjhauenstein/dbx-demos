@@ -15,7 +15,7 @@ sql/        cost per agent run                                               age
      ▼  databricks bundle deploy  (resources/__init__.py builds the jobs)
 agent-task-<task>    one job per task: runs it with its default agent, on its schedule
 agent-task-compare   runs any task with every agent in parallel, for side-by-side answers
-agent-tasks          MLflow experiment, traces stored in Unity Catalog
+traces-<task>        MLflow experiment per task: every run of the task, from any agent, with traces in Unity Catalog
      │
      ▼  src/run_task.py  (writes the harness's own config, with only the task's tools allowed, tags every call,
      │                    and records the run as one MLflow trace)
@@ -37,7 +37,8 @@ Unity Gateway objects: a headless CLI isn't an endpoint, and Unity Gateway agent
 | `opencode-kimi` | [OpenCode](https://github.com/sst/opencode) (MIT) | `system.ai.kimi-k3` |
 
 The example task, `cost-review`, follows the `databricks-billing` skill to summarize week-over-week spend from `system.billing.usage`
-through the DBSQL MCP. It then links a supporting doc found with the example platform MCP, `ms_learn`.
+through the DBSQL MCP. The platform deploys one example external MCP, `databricks_docs` (the public Databricks Developer Docs
+MCP), to show registration, tool selection, and grants as code. A Slack example for shared credentials is under [Add an MCP](#add-an-mcp-for-example-jira-or-slack).
 
 ## Prerequisites
 
@@ -71,7 +72,7 @@ This needs `CREATE CONNECTION`, `CREATE SERVICE`, and `CREATE VOLUME` on the pla
 cd platform
 
 # Connections hold MCP credentials, so they're created once outside the bundle.
-databricks connections create --json "$(jq --arg p "schemas/$PLATFORM_SCHEMA" '. + {parent: $p}' connections/ms_learn.json)"
+databricks connections create --json "$(jq --arg p "schemas/$PLATFORM_SCHEMA" '. + {parent: $p}' connections/databricks_docs.json)"
 
 # MCP services, their allowed tools, and grants.
 BUNDLE_VAR_schema=$PLATFORM_SCHEMA BUNDLE_VAR_agents_principal=$AGENTS_SP databricks bundle deploy
@@ -104,16 +105,18 @@ Every run gets the same tags: `task`, `agent`, `model`, `job_run_id`, plus the t
 
 | Where | What you get |
 |---|---|
-| **MLflow experiment `agent-tasks`** (stored as Unity Catalog tables) | One trace per run: the prompt, the answer, token counts, and a span for each tool call. Filter by `agent` or `task` in the MLflow UI, or query `<prefix>_trace_unified` with SQL. |
+| **MLflow experiment `traces-<task>`**, one per task (stored as Unity Catalog tables `<task>_*`) | One trace per run, from whichever agent ran it: the prompt, the answer, a span per model call and per tool call, and the trace's total tokens. The trace's session is the job run, so a compare run groups its agents' traces, and its user is the service principal. Task owners watch one experiment; filter by `agent` to compare. |
 | **Unity Gateway request tags** (a header on every model and MCP call) | `system.ai_gateway.usage.request_tags`, and `databricks.request_tags` on each span in the unified trace table if your metastore has it (**Govern → Traces**): full prompts, responses, tool arguments, and results. |
 | **Job tags** | `system.lakeflow.jobs.tags`, to join with job compute in `system.billing.usage`. For tags directly in billing `custom_tags`, set a serverless usage policy on the jobs. |
 | **`sql/agent_run_costs.sql`** | Estimated list cost per run and agent: exact job compute per job run, plus model cost split by tokens. |
 
-Compare agents on one task by filtering the experiment on `task`, or with SQL:
+Compare agents on one task in its experiment (filter on `agent`, or open the compare run's session), or with SQL:
 
 ```sql
-SELECT tags['agent'] AS agent, state, execution_duration_ms / 1000 AS seconds, size(spans) AS spans, response
-FROM <trace_catalog>.<trace_schema>.agent_tasks_trace_unified
+SELECT tags['agent'] AS agent, state, execution_duration_ms / 1000 AS seconds,
+       variant_get(trace_metadata, '$["mlflow.trace.tokenUsage"]', 'string') AS tokens,
+       size(filter(spans, s -> s.name LIKE '%execute_sql%')) AS sql_calls, response
+FROM <trace_catalog>.<trace_schema>.<task>_trace_unified          -- task name with underscores, e.g. cost_review
 WHERE tags['job_run_id'] = '<compare_agents run ID>';
 ```
 
@@ -121,14 +124,14 @@ The usage and billing tables can lag by a few hours. MLflow traces and gateway s
 
 ## Add a task
 
-Create `tasks/<name>.md`. The next deploy creates job `agent-task-<name>`.
+Create `tasks/<name>.md`. The next deploy creates job `agent-task-<name>` and its experiment `traces-<name>`.
 
 ```markdown
 ---
 agent: claude-sonnet                              # default agent for scheduled runs
 mcps:                                             # Unity Gateway MCP services → tools this task may call
   system.ai.dbsql: [execute_sql, poll_sql_result]
-  ms_learn: [microsoft_docs_search]               # names without a catalog resolve to the platform schema
+  databricks_docs: [get_doc_resource]             # names without a catalog resolve to the platform schema
 skills: [databricks-billing]                      # loaded first through /ai-gateway/skills/
 tags:                                             # added to the job, every gateway request, and the MLflow trace
   team: data-platform
@@ -171,8 +174,23 @@ MCP's connection. Use a shared service account for that credential, not a person
      1. A Slack admin creates an **internal Slack app**, enables **Slack MCP Server** under **Agents**, and adds the user scopes the tasks need (for example `chat:write`).
      2. Create a dedicated Slack user for the agent. Slack's MCP accepts **user tokens only**, so messages appear as that user.
      3. Create a connection to `https://mcp.slack.com/mcp` with **OAuth U2M Shared**, and sign in once as the agent user.
-2. **Register it** by adding an entry under `resources.mcp_services` in `platform/databricks.yml`. Set `include_tool_selectors`
-   to the tools any task may use, and add the grants. Then redeploy the platform bundle.
+2. **Register it** by adding an entry under `resources.mcp_services` in `platform/databricks.yml`, then redeploy the platform bundle.
+   For example, Slack limited to posting messages, usable by the agents' service principal and a team group:
+   ```yaml
+       slack:
+         parent: schemas/${var.schema}
+         mcp_service_id: slack
+         comment: Slack, acting as the shared agent user
+         config:
+           source_connection:
+             name: connections/${var.schema}.slack
+           include_tool_selectors: [slack_send_message]
+         grants:
+           - principal: ${var.agents_principal}
+             privileges: [EXECUTE]
+           - principal: data-platform-team
+             privileges: [EXECUTE]
+   ```
 3. **Use it** by adding the service name and the tools a task may call to that task's `mcps:` frontmatter.
 
 Tool names are listed under **Unity Gateway → MCPs → \<service\> → Tools**.
@@ -187,8 +205,9 @@ Tool names are listed under **Unity Gateway → MCPs → \<service\> → Tools**
   - Codex runs with its shell disabled and `enabled_tools` per server.
   - OpenCode denies every tool except the allowed MCP tools.
 - Codex blocks MCP calls when run headless unless `default_tools_approval_mode = "approve"` is set. `run_task.py` sets it.
+- Codex reports token usage per turn, not per model call, so its traces show tool spans and the trace total but no model-call spans.
 - OpenCode has a built-in `databricks` provider that reads `DATABRICKS_HOST`. `run_task.py` uses its own provider name
   and points `OPENCODE_CONFIG` at the generated file, so the built-in provider isn't picked up.
-- HTTP connections require credentials. For a public MCP like `ms_learn`, the bearer token is a placeholder the server ignores.
+- HTTP connections require credentials. For a public MCP like `databricks_docs`, the bearer token is a placeholder the server ignores.
 - Jobs use serverless compute and download Node.js plus the pinned CLI from `nodejs.org` and npm at the start of each run.
   If your workspace blocks outbound internet, mirror them and change the URLs in `src/run_task.py`.
