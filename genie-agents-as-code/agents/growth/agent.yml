@@ -1,6 +1,8 @@
-metric_views:
-  - "{schema}.feature_adoption"
-  - "{schema}.weekly_active_users"
+title: Growth Analyst
+description: Engagement and feature adoption questions, answered from metric views.
+data_sources:
+  - table: "{schema}.feature_adoption"
+  - table: "{schema}.weekly_active_users"
 sample_questions:
   - How many weekly active users did we have last week?
   - Which features are growing fastest?

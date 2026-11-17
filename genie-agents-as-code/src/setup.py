@@ -38,6 +38,34 @@ FROM (
 )
 """)
 
+spark.sql(f"""
+CREATE OR REPLACE TABLE {target}.users AS
+SELECT
+  id AS user_id,
+  date_add(DATE'2025-06-01', CAST(rand(6) * 300 AS INT)) AS signup_date,
+  element_at(array('ios', 'android', 'web'), CAST(id % 3 AS INT) + 1) AS platform,
+  element_at(array('US', 'CA', 'UK', 'AU'), CAST(id % 4 AS INT) + 1) AS country
+FROM range(5000)
+""")
+
+spark.sql(f"""
+CREATE OR REPLACE FUNCTION {target}.fiscal_quarter(d DATE)
+RETURNS STRING
+COMMENT 'Fiscal quarter label; the fiscal year starts in February'
+RETURN CONCAT('FY', YEAR(ADD_MONTHS(d, 11)), '-Q', QUARTER(ADD_MONTHS(d, 11)))
+""")
+
+# Genie's sql_functions must be table functions; DATE arguments aren't supported.
+spark.sql(f"""
+CREATE OR REPLACE FUNCTION {target}.signups_for_country(country_code STRING, signup_year INT)
+RETURNS TABLE (signup_month DATE, signups BIGINT)
+COMMENT 'Monthly signups for one country and year'
+RETURN SELECT DATE_TRUNC('MONTH', signup_date) AS signup_month, COUNT(*) AS signups
+FROM {target}.users
+WHERE country = country_code AND YEAR(signup_date) = signup_year
+GROUP BY ALL
+""")
+
 # COMMAND ----------
 
 metric_views = {

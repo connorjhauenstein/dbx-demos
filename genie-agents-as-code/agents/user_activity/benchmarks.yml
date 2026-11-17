@@ -1,0 +1,10 @@
+- name: us_signups_q1_2026
+  question: How many US users signed up in Q1 2026?
+  sql: |
+    SELECT COUNT(*) AS signups
+    FROM {schema}.users
+    WHERE country = 'US' AND signup_date BETWEEN DATE'2026-01-01' AND DATE'2026-03-31'
+- name: how_many_events_used_the_search_feature
+  question: How many events used the search feature?
+  sql: |
+    SELECT COUNT(*) FROM {schema}.events WHERE feature = 'search'

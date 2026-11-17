@@ -1,0 +1,10 @@
+- left:
+    table: "{schema}.events"
+    alias: events
+  right:
+    table: "{schema}.users"
+    alias: users
+  sql: "`events`.`user_id` = `users`.`user_id`"
+  relationship: many_to_one
+  comment: Each event belongs to one user
+  instruction: Join for signup date, platform, or country

@@ -1,0 +1,34 @@
+# Copy this folder to agents/<agent_name>/ and edit. `{schema}` means <catalog>.<schema>
+# (passed to genie_as_code.py with --schema). Every key except title and data_sources is optional.
+
+title: My Agent                        # shown in the Genie UI
+description: What this agent answers.
+# warehouse_id: abc123                 # default: the bundle's warehouse_id variable
+permissions:                           # DAB permissions: CAN_MANAGE, CAN_EDIT, CAN_RUN, CAN_VIEW
+  - level: CAN_RUN
+    group_name: users
+
+data_sources:                          # tables and metric views the agent can query
+  - table: "{schema}.my_metric_view"
+  - table: "{schema}.my_table"
+    description: What one row means.   # extra context for Genie
+    columns:                           # optional per-column settings
+      status:
+        description: Order status
+        synonyms:
+          - state
+        entity_matching: true          # Genie learns the values, e.g. "shipped" -> status = 'SHIPPED'
+      created_at:
+        format_assistance: true        # Genie learns the value format (on automatically with entity_matching)
+      internal_id:
+        exclude: true                  # hide the column from Genie
+  - table: "{schema}.my_other_table"
+
+sample_questions:                      # shown to users as starting points
+  - What was revenue last month?
+
+sql_functions:                         # UC table functions Genie can call as certified answers.
+  - "{schema}.my_table_function"       # Must be RETURNS TABLE, and arguments can't be DATE (use STRING).
+
+# extra:                               # written by `explode` for spec fields this tool doesn't model yet.
+#   config: {...}                      # Merged into the spec as-is; you normally never edit this.

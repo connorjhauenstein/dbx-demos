@@ -1,0 +1,8 @@
+# Benchmarks only this agent runs. To share a benchmark with every agent that uses a data source,
+# put it in ../../benchmarks/<name>.yml with `data_source: "{schema}.<table>"` instead.
+- name: revenue_march_2026             # unique; part of the benchmark's ID
+  question: What was revenue in March 2026?
+  sql: |
+    SELECT MEASURE(revenue) AS revenue
+    FROM {schema}.my_metric_view
+    WHERE order_month = DATE'2026-03-01'

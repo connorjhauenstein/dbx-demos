@@ -1,0 +1,35 @@
+title: User Activity Analyst
+description: Signups, activity, and cohorts. Uses every setting a Genie agent supports.
+permissions:
+  - level: CAN_RUN
+    group_name: users
+data_sources:
+  - table: "{schema}.users"
+    description: One row per user, with signup date, platform, and country.
+    columns:
+      country:
+        description: ISO country code
+        entity_matching: true
+      platform:
+        synonyms:
+          - device
+          - os
+        entity_matching: true
+      signup_date:
+        description: Date the user created their account
+        format_assistance: true
+  - table: "{schema}.events"
+    description: One row per product event.
+    columns:
+      feature:
+        description: Product feature used in the event
+        synonyms:
+          - capability
+        entity_matching: true
+      user_id:
+        exclude: true
+  - table: "{schema}.weekly_active_users"
+sample_questions:
+  - How many users signed up last month?
+sql_functions:
+  - "{schema}.signups_for_country"

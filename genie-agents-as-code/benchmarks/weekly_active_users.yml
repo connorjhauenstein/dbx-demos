@@ -1,4 +1,4 @@
-metric_view: "{schema}.weekly_active_users"
+data_source: "{schema}.weekly_active_users"
 questions:
   - name: wau_week_of_march_2
     question: How many weekly active users did we have in the week of March 2, 2026?

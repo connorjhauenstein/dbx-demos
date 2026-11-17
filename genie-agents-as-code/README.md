@@ -1,71 +1,81 @@
 # Genie agents as code
 
-Manage Genie agents as small, readable files in git instead of one large `serialized_space` JSON,
-and share benchmark questions across every agent that uses the same metric view.
+Manage every setting of a Genie agent as small, readable files in git instead of one large
+`serialized_space` JSON. Benchmarks can be shared across every agent that uses the same table
+or metric view.
 
 ```
+genie-agent-template/      # copy to agents/<name>/ to add an agent; shows every setting
 agents/
-  growth/
-    agent.yml              # metric views + sample questions
-    instructions.md        # the agent's text instruction
-    examples/*.sql         # example SQL; first line is "-- question: ..."
-  monetization/ ...
-benchmarks/
-  weekly_active_users.yml  # metric_view + questions; added to EVERY agent using that view
-  subscription_metrics.yml
-resources/genie_agents.yml # DAB genie_spaces resources (title, description, warehouse)
-genie_as_code.py           # build | explode | evaluate
+  growth/  monetization/   # simple agents over metric views
+  user_activity/           # uses every setting (columns, joins, snippets, functions, parameters, ...)
+benchmarks/                # shared: each file's questions go to EVERY agent using its data_source
+genie_as_code.py           # build | test | explode | evaluate
+databricks.yml             # bundle; includes the generated .build/genie_agents.yml
 ```
 
-`{schema}` in the files stands for `<catalog>.<schema>`, so the same files deploy to any workspace.
+`{schema}` in the files stands for `<catalog>.<schema>`, so the same files deploy anywhere.
 
-## How it works
+## What each file holds
 
-- **build**: turns the files into `.build/<agent>.geniespace.json`. It generates stable IDs,
-  sorts every collection the way the API requires, splits text into line arrays, and adds each
-  benchmark to every agent whose `metric_views` include the benchmark's `metric_view`.
-  The DAB `genie_spaces` resources point at these files with `file_path`.
-- **explode**: pulls a live agent back into the files. Edit an agent in the Genie UI, run
-  `explode`, and `git diff` shows a small, reviewable change. New benchmarks go into the matching
-  metric view's file, so they reach every agent that uses that view on the next deploy.
-  It warns if the live agent has settings these files don't capture.
-- **evaluate**: runs each agent's benchmarks with the Genie eval-runs API (Beta), prints every
-  assessment, and exits non-zero unless every question is correct, so CI can gate on it.
+| File | Genie setting |
+|---|---|
+| `agent.yml` | title, description, warehouse, permissions, data sources (with table descriptions and per-column description / synonyms / exclude / entity matching / format assistance), sample questions, SQL functions |
+| `instructions.md` | the text instruction (Genie allows one) |
+| `examples/*.sql` | example SQL; a `/* */` YAML header holds the question, usage guidance, and parameters |
+| `joins.yml` | join specs: `left`, `right`, `sql`, `relationship`, `comment`, `instruction` |
+| `snippets.yml` | SQL snippets: filters, expressions, measures |
+| `benchmarks.yml` | benchmarks for this agent only |
+| `../../benchmarks/*.yml` | shared benchmarks, keyed by `data_source` |
 
-Git is the source of truth: UI edits are fine, but they come back through `explode` and a PR,
-and the next deploy makes the live agents match git.
+`genie-agent-template/` documents every key. Spec fields this tool doesn't model yet are kept by
+`explode` in `agent.yml` under `extra:` and merged back by `build`, so nothing is lost.
+
+## Commands
+
+| Command | Does |
+|---|---|
+| `build --schema S` | Writes `.build/<agent>.geniespace.json` and the DAB resources (`.build/genie_agents.yml`). Generates stable IDs, sorts collections the way the API requires, and adds shared benchmarks. |
+| `test --schema S` | Offline: every agent builds; SQL only references the agent's data sources; joins, parameter types, and relationships are valid; IDs are unique; every shared benchmark is used. |
+| `test --schema S --sql` | Also runs every example, benchmark, and join on the warehouse, checks configured columns exist, and checks SQL functions are ones Genie accepts. |
+| `explode <agent> --schema S` | Pulls a live agent back into the files, so UI edits become a small `git diff`. New UI benchmarks go to the agent's `benchmarks.yml`. |
+| `evaluate` | Runs every agent's benchmarks with the Genie eval-runs API (Beta) and exits non-zero unless all are correct. |
 
 ## Deploy
 
 ```bash
+pip install databricks-sdk pyyaml               # Databricks CLI >= 1.17
 export DATABRICKS_CONFIG_PROFILE=<profile>
-export BUNDLE_VAR_catalog=<catalog>          # schema defaults to genie_as_code
+export BUNDLE_VAR_catalog=<catalog>             # schema defaults to genie_as_code
 SCHEMA=$BUNDLE_VAR_catalog.genie_as_code
 
-databricks bundle deploy                     # first run: creates the setup job (agents fail until data exists)
-databricks bundle run setup_demo_data        # demo tables + 3 metric views
+databricks bundle deploy                        # setup job (agents come after build)
+databricks bundle run setup_demo_data           # demo tables, metric views, and functions
 python genie_as_code.py build --schema $SCHEMA
-databricks bundle deploy                     # creates or updates the Genie agents
+python genie_as_code.py test --schema $SCHEMA --sql
+databricks bundle deploy                        # creates or updates the agents
 python genie_as_code.py evaluate
 ```
 
-Requires Databricks CLI ≥ 1.17 (the `genie_spaces` resource uses the direct deployment engine),
-`pip install databricks-sdk pyyaml`, and a SQL warehouse (default: "Serverless Starter Warehouse").
+## Workflow
 
-## Day-to-day
+1. **Add an agent:** `cp -r genie-agent-template agents/<name>`, edit, then `test`.
+2. **Change an agent:** edit the files, run `test --sql`, open a PR. In CI: `build`, `test --sql`,
+   `databricks bundle deploy -t <staging>`, `evaluate`. On merge: deploy to prod.
+3. **Someone edited in the UI:** `explode <agent>`, review `git diff`, open a PR. The next deploy
+   makes the live agent match git either way.
+4. **Develop without touching shared agents:** `databricks bundle deploy -t dev` creates your own
+   `[dev <you>]` copies to try things in the UI and `explode` back.
 
-| Change | Do this |
-|---|---|
-| Add a metric view to an agent | Add it to `agents/<agent>/agent.yml`, then build and deploy |
-| Add a benchmark for a metric | Add it to `benchmarks/<metric_view>.yml`; every agent using that view gets it |
-| Add an agent | New folder in `agents/` + an entry in `resources/genie_agents.yml` (same key) |
-| Someone edited an agent in the UI | `python genie_as_code.py explode <agent> --schema $SCHEMA`, review `git diff`, open a PR |
-| CI on a pull request | `build`, `databricks bundle deploy -t <target>`, then `evaluate` |
+To stop UI edits on shared agents, deploy prod as a service principal and give people `CAN_RUN`
+in `permissions` (workspace admins can still edit, so keep `explode` as a drift check).
 
-## Limits
+## Things Genie enforces (learned by testing)
 
-- Covers metric views, sample questions, one text instruction, example SQL, and benchmarks.
-  Other settings (join specs, SQL snippets, column configs, plain tables) aren't in the files;
-  `explode` warns when a live agent has them.
-- Metric views must exist before an agent that uses them is deployed.
-- The eval-runs API is Beta.
+- Metric views are stored under `data_sources.tables`; they must exist before an agent using them is created.
+- `sql_functions` must be **table functions** (`RETURNS TABLE`). A scalar function makes the agent
+  stop answering without an error, and `DATE` arguments are rejected. Scalar functions are fine to
+  call inside example SQL.
+- Parameter types: `STRING`, `INTEGER`, `DECIMAL`, `DOUBLE`, `BOOLEAN`, `DATE`, `DATETIME`; the API checks each default against its type.
+- Entity matching turns on format assistance for the same column.
+- One text instruction per agent; one SQL answer per benchmark.
