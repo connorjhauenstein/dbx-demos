@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "dbsql": {
+      "type": "http",
+      "url": "${DATABRICKS_HOST}/ai-gateway/mcp-services/system.ai.dbsql",
+      "headers": { "Authorization": "Bearer ${DATABRICKS_TOKEN}" }
+    }
+  }
+}

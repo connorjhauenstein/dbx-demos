@@ -1,0 +1,16 @@
+model = "system.ai.glm-5-3"
+model_provider = "databricks"
+
+[model_providers.databricks]
+name = "Databricks"
+base_url = "${DATABRICKS_HOST}/ai-gateway/codex/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+env_key = "DATABRICKS_TOKEN"
+
+[mcp_servers.dbsql]
+url = "${DATABRICKS_HOST}/ai-gateway/mcp-services/system.ai.dbsql"
+bearer_token_env_var = "DATABRICKS_TOKEN"
+enabled_tools = ["execute_sql", "poll_sql_result"]
+default_tools_approval_mode = "approve"

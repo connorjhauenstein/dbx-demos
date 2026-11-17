@@ -1,0 +1,43 @@
+bundle:
+  name: scheduled-agent-tasks
+
+variables:
+  service_principal:
+    description: Application ID of the service principal the agent runs as
+
+permissions:
+  - service_principal_name: ${var.service_principal}
+    level: CAN_VIEW
+
+resources:
+  jobs:
+    cost_review:
+      name: agent-task-cost-review
+      run_as:
+        service_principal_name: ${var.service_principal}
+      schedule:
+        quartz_cron_expression: "0 0 8 ? * MON"
+        timezone_id: America/Los_Angeles
+        pause_status: PAUSED
+      parameters:
+        - name: task
+          default: cost-review
+        - name: harness
+          default: claude
+      environments:
+        - environment_key: default
+          spec:
+            client: "4"
+      tasks:
+        - task_key: run_agent
+          environment_key: default
+          spark_python_task:
+            python_file: src/run_task.py
+            parameters:
+              - ${workspace.file_path}
+              - "{{job.parameters.task}}"
+              - "{{job.parameters.harness}}"
+
+targets:
+  dev:
+    default: true
