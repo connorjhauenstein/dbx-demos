@@ -1,11 +1,11 @@
-# How Genie should join tables (not needed for metric views, which define their own joins).
-- left:
+# Configure > Examples > Joins (not needed for metric views, which define their own joins).
+- left:                                # Left Table
     table: "{schema}.my_table"
-    alias: orders
-  right:
+    alias: orders                      # API only (not shown in the UI); used in the condition
+  right:                               # Right Table
     table: "{schema}.my_other_table"
     alias: customers
-  sql: "`orders`.`customer_id` = `customers`.`customer_id`"
-  relationship: many_to_one            # many_to_one, one_to_many, one_to_one, many_to_many
-  comment: Each order belongs to one customer
-  instruction: Join when a question needs customer attributes
+  condition: "`orders`.`customer_id` = `customers`.`customer_id`"   # Join condition
+  relationship: many_to_one            # Relationship Type: many_to_one, one_to_many, one_to_one, many_to_many
+  instructions: Join when a question needs customer attributes      # Instructions
+  comment: Each order belongs to one customer                       # API only (not shown in the UI)

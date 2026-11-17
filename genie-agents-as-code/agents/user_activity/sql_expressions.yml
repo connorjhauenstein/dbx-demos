@@ -1,0 +1,21 @@
+filters:
+  - name: US users
+    code: users.country = 'US'
+    synonyms:
+      - domestic users
+    instructions: Use when someone asks about the US or domestic users
+  - name: mobile users
+    code: users.platform IN ('ios', 'android')
+measures:
+  - name: signups
+    code: COUNT(DISTINCT users.user_id)
+    synonyms:
+      - new users
+    instructions: Count of users who signed up
+    alias: signups
+fields:
+  - name: signup month
+    code: DATE_TRUNC('MONTH', users.signup_date)
+    synonyms:
+      - cohort
+    alias: signup_month

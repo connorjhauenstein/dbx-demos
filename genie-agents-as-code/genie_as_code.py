@@ -1,4 +1,4 @@
-"""Manage Genie agents as readable files.
+"""Manage Genie agents as readable files. File keys use the Genie UI's names (see README).
 
   python genie_as_code.py build    --schema main.analytics      files -> .build/ (specs + DAB resources)
   python genie_as_code.py test     --schema main.analytics [--sql]  check the files (and run their SQL)
@@ -26,12 +26,13 @@ BENCHMARKS = ROOT / "benchmarks"
 BUILD = ROOT / ".build"
 TOKEN = "{schema}"
 
-COLUMN_KEYS = {"description": "description", "synonyms": "synonyms", "exclude": "exclude",
-               "entity_matching": "enable_entity_matching", "format_assistance": "enable_format_assistance"}
+# File key (Genie UI name) -> API key
+COLUMN_KEYS = {"description": "description", "synonyms": "synonyms", "format_assistance": "enable_format_assistance",
+               "entity_matching": "enable_entity_matching", "hidden": "exclude"}
+EXPRESSION_KINDS = {"filters": "filters", "measures": "measures", "fields": "expressions"}
 RELATIONSHIPS = ("many_to_one", "one_to_many", "one_to_one", "many_to_many")
 PARAM_TYPES = {"STRING": "STRING", "INTEGER": "INT", "DECIMAL": "DECIMAL", "DOUBLE": "DOUBLE",
                "BOOLEAN": "BOOLEAN", "DATE": "DATE", "DATETIME": "TIMESTAMP"}  # Genie type -> SQL type
-SNIPPET_KEY = {"filters": "display_name", "expressions": "alias", "measures": "alias"}
 # Spec keys this tool manages; anything else the API returns is kept in agent.yml `extra`.
 MANAGED = {"": {"version", "config", "data_sources", "instructions", "benchmarks"},
            "config": {"sample_questions"}, "data_sources": {"tables", "metric_views"},
@@ -72,31 +73,40 @@ def write_yaml(path, data):
         path.unlink()
 
 
-def read_example(path):
-    """An example is a SQL file with a YAML header in a leading /* */ comment."""
+def read_query(path):
+    """An example query is a SQL file with a YAML header in a leading /* */ comment."""
     text = path.read_text()
     match = re.match(r"\s*/\*(.*?)\*/\s*(.*)", text, re.S)
     if not match:
         raise ValueError(f"{path.relative_to(ROOT)}: missing the /* question: ... */ header")
-    header = yaml.load(match.group(1), Loader=yaml.BaseLoader) or {}  # keep every value a string
+    header = yaml.load(match.group(1), Loader=yaml.BaseLoader) or {}  # BaseLoader: plain strings only, no objects
     return {**header, "sql": match.group(2).strip()}
 
 
-def write_example(path, example):
-    header = {k: v for k, v in example.items() if k != "sql"}
-    path.write_text(f"/*\n{yaml.dump(header, Dumper=Dumper, sort_keys=False, width=1000)}*/\n{example['sql']}\n")
+def write_query(path, query):
+    header = {k: v for k, v in query.items() if k != "sql"}
+    path.write_text(f"/*\n{yaml.dump(header, Dumper=Dumper, sort_keys=False, width=1000)}*/\n{query['sql']}\n")
 
 
 def load_agent(agent):
     folder = AGENTS / agent
+    instructions = folder / "general_instructions.md"
     return {
         "agent": read_yaml(folder / "agent.yml"),
-        "instructions": (folder / "instructions.md").read_text().strip() if (folder / "instructions.md").exists() else "",
-        "examples": {p.name: read_example(p) for p in sorted((folder / "examples").glob("*.sql"))},
+        "general_instructions": instructions.read_text().strip() if instructions.exists() else "",
+        "queries": {p.name: read_query(p) for p in sorted((folder / "queries").glob("*.sql"))},
         "joins": read_yaml(folder / "joins.yml", []),
-        "snippets": read_yaml(folder / "snippets.yml", {}),
+        "sql_expressions": read_yaml(folder / "sql_expressions.yml", {}),
         "benchmarks": read_yaml(folder / "benchmarks.yml", []),
     }
+
+
+def tables_of(cfg):
+    return [s["table"] for s in cfg.get("sources", []) if "table" in s]
+
+
+def functions_of(cfg):
+    return [s["function"] for s in cfg.get("sources", []) if "function" in s]
 
 
 def shared_benchmarks():
@@ -148,8 +158,7 @@ def table_spec(source):
     for name, settings in (source.get("columns") or {}).items():
         config = {"column_name": name}
         for key, value in (settings or {}).items():
-            api_key = COLUMN_KEYS[key]
-            config[api_key] = lines(value) if key == "description" else value
+            config[COLUMN_KEYS[key]] = lines(value) if key == "description" else value
         if config.get("enable_entity_matching"):
             config["enable_format_assistance"] = True  # the API turns this on with entity matching
         configs.append(config)
@@ -158,22 +167,21 @@ def table_spec(source):
     return spec
 
 
-def example_spec(example):
-    spec = {"id": uid("example", example["question"]), "question": lines(example["question"]),
-            "sql": lines(example["sql"])}
+def query_spec(query):
+    spec = {"id": uid("example", query["question"]), "question": lines(query["question"]), "sql": lines(query["sql"])}
     params = []
-    for p in example.get("parameters", []):
-        param = {"name": p["name"], "type_hint": p["type"]}
-        if p.get("description"):
-            param["description"] = lines(p["description"])
+    for p in query.get("parameters", []):
+        param = {"name": p["keyword"], "type_hint": p["type"]}
+        if p.get("comment"):
+            param["description"] = lines(p["comment"])
         if "default" in p:
             values = p["default"] if isinstance(p["default"], list) else [p["default"]]
             param["default_value"] = {"values": values}
         params.append(param)
     if params:
         spec["parameters"] = params
-    if example.get("usage"):
-        spec["usage_guidance"] = lines(example["usage"])
+    if query.get("usage_guidance"):
+        spec["usage_guidance"] = lines(query["usage_guidance"])
     return spec
 
 
@@ -184,49 +192,55 @@ def join_spec(join):
     spec = {"id": uid("join", left["table"], left["alias"], right["table"], right["alias"]),
             "left": {"identifier": left["table"], "alias": left["alias"]},
             "right": {"identifier": right["table"], "alias": right["alias"]},
-            "sql": [join["sql"], f"--rt=FROM_RELATIONSHIP_TYPE_{join['relationship'].upper()}--"]}
-    for key in ("comment", "instruction"):
-        if join.get(key):
-            spec[key] = lines(join[key])
+            "sql": [join["condition"], f"--rt=FROM_RELATIONSHIP_TYPE_{join['relationship'].upper()}--"]}
+    if join.get("comment"):
+        spec["comment"] = lines(join["comment"])
+    if join.get("instructions"):
+        spec["instruction"] = lines(join["instructions"])
     return spec
 
 
-def snippet_spec(kind, item):
-    key = SNIPPET_KEY[kind]
-    spec = {"id": uid(kind, item[key]), "sql": lines(item["sql"])}
-    for field in ("alias", "display_name", "synonyms"):
-        if item.get(field):
-            spec[field] = item[field]
-    if item.get("instruction"):
-        spec["instruction"] = lines(item["instruction"])
+def expression_spec(api_kind, item):
+    spec = {"id": uid(api_kind, item["name"]), "display_name": item["name"], "sql": lines(item["code"])}
+    if item.get("alias"):
+        spec["alias"] = item["alias"]
+    if item.get("synonyms"):
+        spec["synonyms"] = item["synonyms"]
+    if item.get("instructions"):
+        spec["instruction"] = lines(item["instructions"])
     return spec
 
 
 def benchmark_spec(b):
-    return {"id": uid("benchmark", b["name"]), "question": lines(b["question"]),
+    spec = {"id": uid("benchmark", b["name"]), "question": lines(b["question"]),
             "answer": [{"format": "SQL", "content": lines(b["sql"])}]}
+    if b.get("evaluation_note"):
+        spec["evaluation_note"] = lines(b["evaluation_note"])
+    return spec
 
 
-def applicable_benchmarks(sources):
-    return [q for data in shared_benchmarks().values() if data["data_source"] in sources for q in data["questions"]]
+def applicable_benchmarks(tables):
+    return [q for data in shared_benchmarks().values() if data["source"] in tables for q in data["questions"]]
 
 
 def build_spec(agent, schema):
     a = load_agent(agent)
     cfg = a["agent"]
-    sources = [s["table"] for s in cfg["data_sources"]]
+    expressions = a["sql_expressions"]
     spec = {
         "version": 2,
-        "config": {"sample_questions": [{"id": uid("sample", q), "question": lines(q)} for q in cfg.get("sample_questions", [])]},
-        "data_sources": {"tables": [table_spec(s) for s in cfg["data_sources"]]},
+        "config": {"sample_questions": [{"id": uid("sample", q), "question": lines(q)} for q in cfg.get("common_questions", [])]},
+        "data_sources": {"tables": [table_spec(s) for s in cfg["sources"] if "table" in s]},
         "instructions": {
-            "text_instructions": [{"id": uid("instructions"), "content": lines(a["instructions"])}] if a["instructions"] else [],
-            "example_question_sqls": [example_spec(e) for e in a["examples"].values()],
-            "sql_functions": [{"id": uid("function", f), "identifier": f} for f in cfg.get("sql_functions", [])],
+            "text_instructions": [{"id": uid("instructions"), "content": lines(a["general_instructions"])}]
+            if a["general_instructions"] else [],
+            "example_question_sqls": [query_spec(q) for q in a["queries"].values()],
+            "sql_functions": [{"id": uid("function", f), "identifier": f} for f in functions_of(cfg)],
             "join_specs": [join_spec(j) for j in a["joins"]],
-            "sql_snippets": {kind: [snippet_spec(kind, i) for i in a["snippets"].get(kind, [])] for kind in SNIPPET_KEY},
+            "sql_snippets": {api: [expression_spec(api, i) for i in expressions.get(kind, [])]
+                             for kind, api in EXPRESSION_KINDS.items()},
         },
-        "benchmarks": {"questions": [benchmark_spec(b) for b in applicable_benchmarks(sources) + a["benchmarks"]]},
+        "benchmarks": {"questions": [benchmark_spec(b) for b in applicable_benchmarks(tables_of(cfg)) + a["benchmarks"]]},
     }
     spec = prune(merge(spec, cfg.get("extra")))
     spec = json.loads(json.dumps(spec).replace(TOKEN, schema))
@@ -276,14 +290,14 @@ def sql_texts(spec):
     """Every SQL string in a spec, with a label."""
     ins = spec.get("instructions", {})
     for e in ins.get("example_question_sqls", []):
-        yield f"example '{unlines(e['question'])}'", unlines(e["sql"])
+        yield f"query '{unlines(e['question'])}'", unlines(e["sql"])
     for b in spec.get("benchmarks", {}).get("questions", []):
         yield f"benchmark '{unlines(b['question'])}'", unlines(b["answer"][0]["content"])
     for j in ins.get("join_specs", []):
         yield f"join {j['left']['alias']}->{j['right']['alias']}", j["sql"][0]
     for kind, items in ins.get("sql_snippets", {}).items():
         for i in items:
-            yield f"{kind[:-1]} '{i.get('alias') or i.get('display_name')}'", unlines(i["sql"])
+            yield f"{kind} '{i.get('display_name')}'", unlines(i["sql"])
 
 
 def check_spec(agent, spec, schema):
@@ -294,11 +308,11 @@ def check_spec(agent, spec, schema):
     for label, sql in sql_texts(spec):
         for ref in re.findall(re.escape(schema) + r"\.\w+(?!\w|\s*\()", sql):  # tables, not function calls
             if ref not in tables | functions:
-                problems.append(f"{agent}: {label} uses {ref}, which isn't in data_sources or sql_functions")
+                problems.append(f"{agent}: {label} uses {ref}, which isn't in sources")
     for j in ins.get("join_specs", []):
         for side in ("left", "right"):
             if j[side]["identifier"] not in tables:
-                problems.append(f"{agent}: join uses {j[side]['identifier']}, which isn't in data_sources")
+                problems.append(f"{agent}: join uses {j[side]['identifier']}, which isn't in sources")
     for e in ins.get("example_question_sqls", []):
         for p in e.get("parameters", []):
             if p["type_hint"] not in PARAM_TYPES:
@@ -335,7 +349,7 @@ def check_function(agent, name, w, warehouse):
         info.setdefault(field, []).append(line.strip())
     problems = []
     if info.get("Type") != ["TABLE"]:
-        problems.append(f"{agent}: sql_functions entry {name} must be a table function (RETURNS TABLE)")
+        problems.append(f"{agent}: SQL function {name} must be a table function (RETURNS TABLE)")
     for arg in info.get("Input", []):
         if arg.split()[-1:] == ["DATE"]:
             problems.append(f"{agent}: function {name} argument '{arg.split()[0]}' is DATE, which Genie rejects; use STRING")
@@ -343,12 +357,12 @@ def check_function(agent, name, w, warehouse):
 
 
 def check_sql(agent, spec, w, warehouse, done):
-    """Run each table, column, function, example, benchmark and join against the warehouse."""
+    """Run each source, column, function, query, benchmark and join against the warehouse."""
     problems, ins = [], spec.get("instructions", {})
     for t in spec["data_sources"].get("tables", []):
         rows, error = run_sql(w, warehouse, f"DESCRIBE TABLE {t['identifier']}")  # works for metric views too
         if error:
-            problems.append(f"{agent}: data source {t['identifier']} failed: {error.splitlines()[0][:200]}")
+            problems.append(f"{agent}: source {t['identifier']} failed: {error.splitlines()[0][:200]}")
             continue
         columns = {r[0] for r in rows}
         for c in t.get("column_configs", []):
@@ -361,7 +375,7 @@ def check_sql(agent, spec, w, warehouse, done):
         params = [StatementParameterListItem(name=p["name"], value=p["default_value"]["values"][0],
                                              type=PARAM_TYPES.get(p["type_hint"], "STRING"))
                   for p in e.get("parameters", []) if p.get("default_value")]
-        checks.append((f"example '{unlines(e['question'])}'", unlines(e["sql"]), params, False))
+        checks.append((f"query '{unlines(e['question'])}'", unlines(e["sql"]), params, False))
     for b in spec.get("benchmarks", {}).get("questions", []):
         checks.append((f"benchmark '{unlines(b['question'])}'", unlines(b["answer"][0]["content"]), [], True))
     for j in ins.get("join_specs", []):
@@ -389,10 +403,10 @@ def test(schema, with_sql):
             problems.append(f"{agent}: can't build: {e!r}")
             continue
         problems += check_spec(agent, specs[agent], schema)
-    used = {s["table"] for a in agent_names() for s in load_agent(a)["agent"]["data_sources"]}
+    used = {t for a in agent_names() for t in tables_of(load_agent(a)["agent"])}
     for path, data in shared_benchmarks().items():
-        if data["data_source"] not in used:
-            problems.append(f"{path.relative_to(ROOT)}: no agent uses {data['data_source']}")
+        if data["source"] not in used:
+            problems.append(f"{path.relative_to(ROOT)}: no agent uses {data['source']}")
     if with_sql:
         w, warehouse, done = WorkspaceClient(), bundle_var("warehouse_id"), set()
         for agent, spec in specs.items():
@@ -445,10 +459,15 @@ def unmanaged(live):
         rest = {k: v for k, v in live.get(section, {}).items() if k not in MANAGED[section]}
         if rest:
             extra[section] = rest
-    snippets = {k: v for k, v in live.get("instructions", {}).get("sql_snippets", {}).items() if k not in SNIPPET_KEY}
+    snippets = {k: v for k, v in live.get("instructions", {}).get("sql_snippets", {}).items()
+                if k not in EXPRESSION_KINDS.values()}
     if snippets:
         extra.setdefault("instructions", {})["sql_snippets"] = snippets
     return extra
+
+
+def source_key(s):
+    return ("table", s["table"]) if "table" in s else ("function", s["function"])
 
 
 def explode(agent, schema):
@@ -456,66 +475,67 @@ def explode(agent, schema):
     live = json.loads(json.dumps(live_raw).replace(schema, TOKEN))
     folder = AGENTS / agent
     old = load_agent(agent)
+    old_cfg = old["agent"]
     ins = live.get("instructions", {})
 
     # agent.yml: title/description/warehouse/permissions stay as written; the rest comes from the live agent.
-    old_sources = {s["table"]: s for s in old["agent"]["data_sources"]}
+    old_columns = {s["table"]: list(s.get("columns") or {}) for s in old_cfg.get("sources", []) if "table" in s}
     sources = []
     for t in live["data_sources"].get("tables", []) + live["data_sources"].get("metric_views", []):
         columns = {}
-        old_cols = list((old_sources.get(t["identifier"], {}).get("columns") or {}))
-        for c in ordered(t.get("column_configs", []), old_cols, lambda c: c["column_name"]):
+        for c in ordered(t.get("column_configs", []), old_columns.get(t["identifier"], []), lambda c: c["column_name"]):
             settings = compact({k: (text(c[api]) if k == "description" else c[api])
                                 for k, api in COLUMN_KEYS.items() if api in c})
             if settings.get("entity_matching"):
                 settings.pop("format_assistance", None)  # implied by entity matching
             columns[c["column_name"]] = settings or None
         sources.append(compact({"table": t["identifier"], "description": text(t.get("description")), "columns": columns}))
-    cfg = {k: v for k, v in old["agent"].items() if k in ("title", "description", "warehouse_id", "permissions")}
-    cfg["data_sources"] = ordered(sources, list(old_sources), lambda s: s["table"])
-    cfg["sample_questions"] = ordered([text(q["question"]) for q in live.get("config", {}).get("sample_questions", [])],
-                                      old["agent"].get("sample_questions", []))
-    cfg["sql_functions"] = ordered([f["identifier"] for f in ins.get("sql_functions", [])],
-                                   old["agent"].get("sql_functions", []))
+    sources += [{"function": f["identifier"]} for f in ins.get("sql_functions", [])]
+    cfg = {k: v for k, v in old_cfg.items() if k in ("title", "description", "warehouse_id", "permissions")}
+    cfg["common_questions"] = ordered([text(q["question"]) for q in live.get("config", {}).get("sample_questions", [])],
+                                      old_cfg.get("common_questions", []))
+    cfg["sources"] = ordered(sources, [source_key(s) for s in old_cfg.get("sources", [])], source_key)
     cfg["extra"] = unmanaged(live)
     write_yaml(folder / "agent.yml", compact(cfg))
 
     instructions = ins.get("text_instructions", [])
-    (folder / "instructions.md").write_text(text(instructions[0]["content"]) + "\n" if instructions else "")
+    (folder / "general_instructions.md").write_text(text(instructions[0]["content"]) + "\n" if instructions else "")
 
-    files = {e["question"]: name for name, e in old["examples"].items()}
-    (folder / "examples").mkdir(exist_ok=True)
-    for p in (folder / "examples").glob("*.sql"):
+    files = {q["question"]: name for name, q in old["queries"].items()}
+    (folder / "queries").mkdir(exist_ok=True)
+    for p in (folder / "queries").glob("*.sql"):
         p.unlink()
     for e in ins.get("example_question_sqls", []):
-        example = compact({
-            "question": text(e["question"]), "usage": text(e.get("usage_guidance")),
-            "parameters": [compact({"name": p["name"], "type": p["type_hint"],
+        query = compact({
+            "question": text(e["question"]), "usage_guidance": text(e.get("usage_guidance")),
+            "parameters": [compact({"keyword": p["name"], "type": p["type_hint"],
                                     "default": (lambda v: v[0] if len(v) == 1 else v)(p["default_value"]["values"])
                                     if p.get("default_value") else None,
-                                    "description": text(p.get("description"))}) for p in e.get("parameters", [])],
+                                    "comment": text(p.get("description"))}) for p in e.get("parameters", [])],
         })
-        example["sql"] = text(e["sql"])
-        write_example(folder / "examples" / files.get(example["question"], slug(example["question"]) + ".sql"), example)
+        query["sql"] = text(e["sql"])
+        write_query(folder / "queries" / files.get(query["question"], slug(query["question"]) + ".sql"), query)
 
     joins = [compact({"left": {"table": j["left"]["identifier"], "alias": j["left"]["alias"]},
                       "right": {"table": j["right"]["identifier"], "alias": j["right"]["alias"]},
-                      "sql": j["sql"][0],
+                      "condition": j["sql"][0],
                       "relationship": re.search(r"--rt=FROM_RELATIONSHIP_TYPE_(\w+)--", j["sql"][1]).group(1).lower(),
-                      "comment": text(j.get("comment")), "instruction": text(j.get("instruction"))})
+                      "instructions": text(j.get("instruction")), "comment": text(j.get("comment"))})
              for j in ins.get("join_specs", [])]
     join_key = lambda j: (j["left"]["table"], j["left"]["alias"], j["right"]["table"], j["right"]["alias"])
     write_yaml(folder / "joins.yml", ordered(joins, [join_key(j) for j in old["joins"]], join_key))
 
-    snippets = {}
-    for kind, key in SNIPPET_KEY.items():
-        items = [compact({"alias": i.get("alias"), "display_name": i.get("display_name"), "sql": text(i["sql"]),
-                          "synonyms": i.get("synonyms"), "instruction": text(i.get("instruction"))})
-                 for i in ins.get("sql_snippets", {}).get(kind, [])]
-        snippets[kind] = ordered(items, [i.get(key) for i in old["snippets"].get(kind, [])], lambda i: i.get(key))
-    write_yaml(folder / "snippets.yml", compact(snippets))
+    expressions = {}
+    for kind, api in EXPRESSION_KINDS.items():
+        items = [compact({"name": i.get("display_name") or i.get("alias"), "code": text(i["sql"]),
+                          "synonyms": i.get("synonyms"), "instructions": text(i.get("instruction")),
+                          "alias": i.get("alias")})
+                 for i in ins.get("sql_snippets", {}).get(api, [])]
+        old_names = [i["name"] for i in old["sql_expressions"].get(kind, [])]
+        expressions[kind] = ordered(items, old_names, lambda i: i["name"])
+    write_yaml(folder / "sql_expressions.yml", compact(expressions))
 
-    explode_benchmarks(agent, live, cfg, old)
+    explode_benchmarks(agent, live, tables_of(cfg), old)
 
     rebuilt = build_spec(agent, schema)
     for section in sorted(set(rebuilt) | set(live_raw)):
@@ -524,27 +544,28 @@ def explode(agent, schema):
     print(f"exploded {agent} into {folder.relative_to(ROOT)}")
 
 
-def explode_benchmarks(agent, live, cfg, old):
+def explode_benchmarks(agent, live, tables, old):
     """Shared benchmarks are updated in place; new ones go to the agent's own benchmarks.yml."""
     shared = shared_benchmarks()
-    sources = {s["table"] for s in cfg["data_sources"]}
     by_id = {uid("benchmark", q["name"]): q for data in shared.values() for q in data["questions"]}
     local_ids = {uid("benchmark", q["name"]): q for q in old["benchmarks"]}
     local, seen = [], set()
     for item in live.get("benchmarks", {}).get("questions", []):
-        q = {"question": text(item["question"]), "sql": text(item["answer"][0]["content"]) + "\n"}
+        q = compact({"question": text(item["question"]), "evaluation_note": text(item.get("evaluation_note")),
+                     "sql": text(item["answer"][0]["content"]) + "\n"})
         seen.add(item["id"])
         if item["id"] in by_id:
+            by_id[item["id"]].pop("evaluation_note", None)
             by_id[item["id"]].update(q)
         elif item["id"] in local_ids:
-            local.append({**local_ids[item["id"]], **q})
+            local.append(compact({**local_ids[item["id"]], "evaluation_note": None, **q}))
         else:
             local.append({"name": slug(q["question"]), **q})
             print(f"new benchmark '{q['question']}' -> agents/{agent}/benchmarks.yml")
     for path, data in shared.items():
         write_yaml(path, data)
         for q in data["questions"]:
-            if data["data_source"] in sources and uid("benchmark", q["name"]) not in seen:
+            if data["source"] in tables and uid("benchmark", q["name"]) not in seen:
                 print(f"warning: shared benchmark '{q['name']}' isn't in the live agent (kept in {path.name})")
     write_yaml(AGENTS / agent / "benchmarks.yml", ordered(local, [q["name"] for q in old["benchmarks"]], lambda q: q["name"]))
 

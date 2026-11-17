@@ -1,0 +1,18 @@
+# Configure > Examples > Filters, Measures, and Fields (the API calls these sql_snippets).
+# Prefer defining measures and dimensions in a metric view; use these for Genie-only logic.
+# Each has: name (Name), code (Code), synonyms (Synonyms), instructions (Instructions).
+filters:                               # a boolean condition
+  - name: shipped orders
+    code: orders.status = 'SHIPPED'
+    synonyms:
+      - fulfilled
+    instructions: Use when someone asks about shipped or fulfilled orders
+measures:                              # an aggregation
+  - name: orders
+    code: COUNT(DISTINCT orders.order_id)
+    synonyms:
+      - number of orders
+    alias: order_count                 # API only (not shown in the UI); optional
+fields:                                # a per-row value to group or filter by (API: expressions)
+  - name: order month
+    code: DATE_TRUNC('MONTH', orders.created_at)

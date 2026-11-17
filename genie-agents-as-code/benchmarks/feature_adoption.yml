@@ -1,4 +1,4 @@
-data_source: "{schema}.feature_adoption"
+source: "{schema}.feature_adoption"
 questions:
   - name: top_feature_week_of_march_2
     question: Which feature had the most users in the week of March 2, 2026?

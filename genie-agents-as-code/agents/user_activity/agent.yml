@@ -3,7 +3,9 @@ description: Signups, activity, and cohorts. Uses every setting a Genie agent su
 permissions:
   - level: CAN_RUN
     group_name: users
-data_sources:
+common_questions:
+  - How many users signed up last month?
+sources:
   - table: "{schema}.users"
     description: One row per user, with signup date, platform, and country.
     columns:
@@ -27,9 +29,6 @@ data_sources:
           - capability
         entity_matching: true
       user_id:
-        exclude: true
+        hidden: true
   - table: "{schema}.weekly_active_users"
-sample_questions:
-  - How many users signed up last month?
-sql_functions:
-  - "{schema}.signups_for_country"
+  - function: "{schema}.signups_for_country"

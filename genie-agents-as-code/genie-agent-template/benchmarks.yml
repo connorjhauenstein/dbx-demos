@@ -1,8 +1,9 @@
-# Benchmarks only this agent runs. To share a benchmark with every agent that uses a data source,
-# put it in ../../benchmarks/<name>.yml with `data_source: "{schema}.<table>"` instead.
-- name: revenue_march_2026             # unique; part of the benchmark's ID
-  question: What was revenue in March 2026?
-  sql: |
+# Benchmark > Questions, for this agent only. To share a benchmark with every agent that uses a source,
+# put it in ../../benchmarks/<name>.yml with `source: "{schema}.<table>"` instead.
+- name: revenue_march_2026             # unique; not shown in the UI (the benchmark's stable ID)
+  question: What was revenue in March 2026?                 # Question
+  evaluation_note: Any rounding to whole dollars is fine    # Evaluation note (Agent mode only)
+  sql: |                                                    # Ground truth SQL answer
     SELECT MEASURE(revenue) AS revenue
     FROM {schema}.my_metric_view
     WHERE order_month = DATE'2026-03-01'

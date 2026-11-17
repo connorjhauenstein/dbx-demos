@@ -1,8 +1,8 @@
 title: Monetization Analyst
 description: Subscription and revenue questions, answered from metric views.
-data_sources:
-  - table: "{schema}.subscription_metrics"
-  - table: "{schema}.weekly_active_users"
-sample_questions:
+common_questions:
   - What was new MRR by plan last month?
   - How many weekly active users do we have per new subscription?
+sources:
+  - table: "{schema}.subscription_metrics"
+  - table: "{schema}.weekly_active_users"

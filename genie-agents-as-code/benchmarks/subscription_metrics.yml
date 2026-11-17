@@ -1,4 +1,4 @@
-data_source: "{schema}.subscription_metrics"
+source: "{schema}.subscription_metrics"
 questions:
   - name: new_mrr_by_plan_march
     question: What was new MRR by plan for subscriptions started in March 2026?

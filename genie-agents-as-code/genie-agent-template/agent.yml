@@ -1,34 +1,33 @@
 # Copy this folder to agents/<agent_name>/ and edit. `{schema}` means <catalog>.<schema>
-# (passed to genie_as_code.py with --schema). Every key except title and data_sources is optional.
+# (passed to genie_as_code.py with --schema). Keys use the Genie UI's names; only title and sources are required.
 
-title: My Agent                        # shown in the Genie UI
-description: What this agent answers.
-# warehouse_id: abc123                 # default: the bundle's warehouse_id variable
-permissions:                           # DAB permissions: CAN_MANAGE, CAN_EDIT, CAN_RUN, CAN_VIEW
+# --- Configure > About
+title: My Agent                        # Name
+description: What this agent answers.  # Description
+# warehouse_id: abc123                 # Warehouse (default: the bundle's warehouse_id variable)
+permissions:                           # Share: CAN_MANAGE, CAN_EDIT, CAN_RUN, CAN_VIEW
   - level: CAN_RUN
     group_name: users
-
-data_sources:                          # tables and metric views the agent can query
-  - table: "{schema}.my_metric_view"
-  - table: "{schema}.my_table"
-    description: What one row means.   # extra context for Genie
-    columns:                           # optional per-column settings
-      status:
-        description: Order status
-        synonyms:
-          - state
-        entity_matching: true          # Genie learns the values, e.g. "shipped" -> status = 'SHIPPED'
-      created_at:
-        format_assistance: true        # Genie learns the value format (on automatically with entity_matching)
-      internal_id:
-        exclude: true                  # hide the column from Genie
-  - table: "{schema}.my_other_table"
-
-sample_questions:                      # shown to users as starting points
+common_questions:                      # Common questions
   - What was revenue last month?
 
-sql_functions:                         # UC table functions Genie can call as certified answers.
-  - "{schema}.my_table_function"       # Must be RETURNS TABLE, and arguments can't be DATE (use STRING).
+# --- Configure > Sources (Tables, Metric Views, SQL functions)
+sources:
+  - table: "{schema}.my_metric_view"   # metric views use `table:` too
+  - table: "{schema}.my_table"
+    description: What one row means.   # table Description
+    columns:                           # per-column settings
+      status:
+        description: Order status      # Description
+        synonyms:                      # Synonyms
+          - state
+        entity_matching: true          # Entity matching ("shipped" -> status = 'SHIPPED'); turns on format assistance
+      created_at:
+        format_assistance: true        # Format assistance
+      internal_id:
+        hidden: true                   # Hide column
+  - table: "{schema}.my_other_table"
+  - function: "{schema}.my_table_function"  # SQL functions: must be RETURNS TABLE; no DATE arguments (use STRING)
 
 # extra:                               # written by `explode` for spec fields this tool doesn't model yet.
 #   config: {...}                      # Merged into the spec as-is; you normally never edit this.
