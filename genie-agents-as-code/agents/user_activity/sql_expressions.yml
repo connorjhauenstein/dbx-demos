@@ -19,3 +19,8 @@ fields:
     synonyms:
       - cohort
     alias: signup_month
+  - name: signup year
+    code: YEAR(users.signup_date)
+    synonyms:
+      - cohort year
+      - joined year

@@ -319,12 +319,17 @@ def check_spec(agent, spec, schema):
                 problems.append(f"{agent}: parameter {p['name']} type must be one of {', '.join(PARAM_TYPES)}")
             if f":{p['name']}" not in unlines(e["sql"]):
                 problems.append(f"{agent}: parameter {p['name']} isn't used as :{p['name']} in its SQL")
-    question_ids = [q["id"] for q in spec.get("config", {}).get("sample_questions", []) + spec.get("benchmarks", {}).get("questions", [])]
-    instruction_ids = [i["id"] for key in ("text_instructions", "example_question_sqls", "join_specs") for i in ins.get(key, [])]
-    instruction_ids += [i["id"] for items in ins.get("sql_snippets", {}).values() for i in items]
-    for name, ids in (("question", question_ids), ("instruction", instruction_ids)):
-        if len(ids) != len(set(ids)):
-            problems.append(f"{agent}: duplicate {name} (same name/question used twice)")
+    # IDs come from names/questions, so a duplicate ID means the same item is defined twice.
+    questions = spec.get("config", {}).get("sample_questions", []) + spec.get("benchmarks", {}).get("questions", [])
+    others = [i for key in ("example_question_sqls", "join_specs") for i in ins.get(key, [])]
+    others += [i for items in ins.get("sql_snippets", {}).values() for i in items]
+    for items in (questions, others):
+        seen = set()
+        for i in items:
+            if i["id"] in seen:
+                label = unlines(i["question"]) if "question" in i else i.get("display_name") or i["sql"][0]
+                problems.append(f"{agent}: '{label}' is defined twice (same name or question)")
+            seen.add(i["id"])
     return problems
 
 

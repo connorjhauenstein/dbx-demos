@@ -20,6 +20,8 @@ sources:
       signup_date:
         description: Date the user created their account
         format_assistance: true
+      user_id:
+        hidden: true
   - table: "{schema}.events"
     description: One row per product event.
     columns:
