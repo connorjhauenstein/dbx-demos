@@ -2,14 +2,19 @@
 
   python genie_as_code.py build            files -> .build/ (specs + DAB resources)
   python genie_as_code.py test [--sql]     check the files (and run their SQL on the warehouse)
-  python genie_as_code.py explode <agent>  live agent -> files
+  python genie_as_code.py deploy           deploy the built agents (with safety checks)
+  python genie_as_code.py explode <agent>  live agent -> files, committed to git
+  python genie_as_code.py status           which commit each agent was deployed from
   python genie_as_code.py evaluate         run every agent's benchmarks
 
 Every command takes --target (default: dev). The catalog, schema, and warehouse come from that
 bundle target, and `{schema}` in the files stands for <catalog>.<schema>. Usually run through `make`.
 """
 import argparse
+import datetime
+import functools
 import hashlib
+import io
 import json
 import re
 import subprocess
@@ -19,6 +24,8 @@ from pathlib import Path
 
 import yaml
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import NotFound
+from databricks.sdk.service.workspace import ImportFormat
 from databricks.sdk.service.sql import StatementParameterListItem
 
 ROOT = Path(__file__).resolve().parent
@@ -427,7 +434,7 @@ def test(target, with_sql):
     sys.exit(1 if problems else 0)
 
 
-# ---------------------------------------------------------------- explode
+# ---------------------------------------------------------------- bundle, git, deploy records
 
 def bundle(target, command):
     result = subprocess.run(["databricks", "bundle", command, "--target", target, "-o", "json"], cwd=ROOT,
@@ -437,19 +444,105 @@ def bundle(target, command):
     return json.loads(result.stdout)
 
 
+@functools.lru_cache(maxsize=None)
 def bundle_settings(target):
-    """Catalog, schema, and warehouse for a bundle target, from databricks.yml."""
-    v = {k: x.get("value") for k, x in bundle(target, "validate")["variables"].items()}
-    return {"schema": f"{v['catalog']}.{v['schema']}", "warehouse_id": v["warehouse_id"]}
+    """Catalog, schema, warehouse, workspace path, and mode for a bundle target, from databricks.yml."""
+    config = bundle(target, "validate")
+    v = {k: x.get("value") for k, x in config["variables"].items()}
+    return {"schema": f"{v['catalog']}.{v['schema']}", "warehouse_id": v["warehouse_id"],
+            "root_path": config["workspace"]["root_path"], "mode": config["bundle"].get("mode")}
 
 
 def space_ids(target):
-    return {k: v["id"] for k, v in bundle(target, "summary")["resources"].get("genie_spaces", {}).items()}
+    """Deployed agents in a target (agents defined but not deployed yet have no id)."""
+    spaces = bundle(target, "summary")["resources"].get("genie_spaces", {})
+    return {k: v["id"] for k, v in spaces.items() if v.get("id")}
 
 
 def fetch(w, space_id):
     space = w.api_client.do("GET", f"/api/2.0/genie/spaces/{space_id}", query={"include_serialized_space": "true"})
     return json.loads(space["serialized_space"])
+
+
+def git(*args):
+    result = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+    if result.returncode:
+        sys.exit(f"git {' '.join(args)} failed:\n{result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def uncommitted(*paths):
+    return git("status", "--porcelain", "--", *paths)
+
+
+# After each deploy we save what the live agent looked like, plus the git commit, next to the bundle's
+# own state in the workspace. explode, deploy, and status compare against it to spot UI edits.
+
+def record_path(target, agent):
+    return f"{bundle_settings(target)['root_path']}/genie_deployments/{agent}.json"
+
+
+def read_record(w, target, agent):
+    try:
+        return json.loads(w.workspace.download(record_path(target, agent)).read())
+    except NotFound:
+        return None
+
+
+def write_record(w, target, agent, spec):
+    path = record_path(target, agent)
+    w.workspace.mkdirs(path.rsplit("/", 1)[0])
+    record = {"commit": git("rev-parse", "HEAD"), "uncommitted_changes": bool(uncommitted(".")),
+              "deployed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "spec": spec}
+    w.workspace.upload(path, io.BytesIO(json.dumps(record, indent=1).encode()), format=ImportFormat.AUTO, overwrite=True)
+
+
+def unpulled_edits(w, target, agent, space_id):
+    """The live spec if it was changed (in the UI or API) since our last deploy and those changes aren't
+    in the files yet, else None."""
+    record = read_record(w, target, agent)
+    live = fetch(w, space_id)
+    if not record or canon(live) == canon(record["spec"]):
+        return None
+    in_files = (AGENTS / agent / "agent.yml").exists() and canon(live) == canon(build_spec(agent, bundle_settings(target)["schema"]))
+    return None if in_files else live
+
+
+def deploy(target, force):
+    """bundle deploy, but never silently overwrite UI edits, and only ship committed code to shared targets."""
+    if bundle_settings(target)["mode"] != "development" and uncommitted("."):
+        sys.exit(f"'{target}' is a shared target: commit your changes before deploying, so the deploy can be rolled back.")
+    w = WorkspaceClient()
+    edited = []
+    for agent, space_id in space_ids(target).items():
+        live = unpulled_edits(w, target, agent, space_id)
+        if live:
+            backup = BUILD / "backups" / f"{target}-{agent}-{datetime.datetime.now():%Y%m%d-%H%M%S}.json"
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            backup.write_text(json.dumps(live, indent=2))
+            edited.append(f"  {agent} (live version saved to {backup.relative_to(ROOT)})")
+    if edited and not force:
+        sys.exit("These agents were changed in the UI since the last deploy, and deploying would overwrite that:\n"
+                 + "\n".join(edited) + "\nPull the changes first (make explode AGENT=<name>), or deploy anyway with FORCE=1.")
+    if subprocess.run(["databricks", "bundle", "deploy", "--target", target], cwd=ROOT).returncode:
+        sys.exit(1)
+    for agent, space_id in space_ids(target).items():
+        write_record(w, target, agent, fetch(w, space_id))
+
+
+def status(target):
+    w = WorkspaceClient()
+    for agent, space_id in space_ids(target).items():
+        record = read_record(w, target, agent)
+        if not record:
+            print(f"{agent:16} no deploy record")
+            continue
+        commit = record["commit"][:8] + (" + uncommitted changes" if record["uncommitted_changes"] else "")
+        edited = "  UI edits not pulled into files" if unpulled_edits(w, target, agent, space_id) else ""
+        print(f"{agent:16} {commit:32} deployed {record['deployed_at']}{edited}")
+
+
+# ---------------------------------------------------------------- explode
 
 
 def ordered(new, old_keys, key=lambda x: x):
@@ -484,12 +577,28 @@ def source_key(s):
     return ("table", s["table"]) if "table" in s else ("function", s["function"])
 
 
-def explode(target, agent):
+def explode(target, agent, force, commit):
     schema = bundle_settings(target)["schema"]
     ids = space_ids(target)
     if agent not in ids:
         sys.exit(f"no deployed agent '{agent}' in target '{target}'; deployed: {', '.join(ids) or 'none'}")
-    live_raw = fetch(WorkspaceClient(), ids[agent])
+    paths = [f"agents/{agent}", "benchmarks"]
+    if uncommitted(*paths) and not force:
+        sys.exit(f"Commit or stash your changes to {' and '.join(paths)} first, so this pull is its own commit.")
+    w = WorkspaceClient()
+    live_raw = fetch(w, ids[agent])
+    record = read_record(w, target, agent)
+    if canon(live_raw) == canon(build_spec(agent, schema)):
+        print(f"{agent}: the live agent already matches your files; nothing to pull")
+        return
+    if record and not force:
+        if canon(live_raw) == canon(record["spec"]):
+            print(f"{agent}: no UI changes since the last deploy; nothing to pull")
+            return
+        if canon(build_spec(agent, schema)) != canon(record["spec"]):
+            sys.exit(f"{agent} changed in both places since the last deploy: in the UI, and in your files (for example "
+                     "commits you pulled). Exploding would drop your file changes; deploying would drop the UI edits.\n"
+                     "Deploy your files first, then redo the UI edits, or run with FORCE=1 to take the UI version.")
     live = json.loads(json.dumps(live_raw).replace(schema, TOKEN))
     folder = AGENTS / agent
     old = load_agent(agent)
@@ -560,6 +669,10 @@ def explode(target, agent):
         if canon(rebuilt.get(section)) != canon(live_raw.get(section)):
             print(f"warning: '{section}' in the live agent doesn't round-trip exactly; check git diff before redeploying")
     print(f"exploded {agent} into {folder.relative_to(ROOT)}")
+    if commit and uncommitted(*paths):
+        git("add", "-A", "--", *paths)
+        git("commit", "-m", f"genie({agent}): pull UI changes from {target}", "--", *paths)
+        print(f"committed: {git('log', '-1', '--format=%h %s')}")
 
 
 def explode_benchmarks(agent, live, tables, old):
@@ -630,15 +743,25 @@ def main():
     sub.add_parser("build", parents=[common])
     sub.add_parser("test", parents=[common]).add_argument(
         "--sql", action="store_true", help="also run every query against the target's warehouse")
-    sub.add_parser("explode", parents=[common]).add_argument("agent")
+    sub.add_parser("deploy", parents=[common]).add_argument(
+        "--force", action="store_true", help="deploy even if agents were edited in the UI")
+    p = sub.add_parser("explode", parents=[common])
+    p.add_argument("agent")
+    p.add_argument("--force", action="store_true", help="take the UI version even if your files changed too")
+    p.add_argument("--no-commit", action="store_true", help="write the files but don't commit them")
+    sub.add_parser("status", parents=[common])
     sub.add_parser("evaluate", parents=[common])
     args = parser.parse_args()
     if args.command == "build":
         build(args.target)
     elif args.command == "test":
         test(args.target, args.sql)
+    elif args.command == "deploy":
+        deploy(args.target, args.force)
     elif args.command == "explode":
-        explode(args.target, args.agent)
+        explode(args.target, args.agent, args.force, not args.no_commit)
+    elif args.command == "status":
+        status(args.target)
     else:
         evaluate(args.target)
 
