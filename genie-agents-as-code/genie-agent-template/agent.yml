@@ -1,5 +1,5 @@
 # Copy this folder to agents/<agent_name>/ and edit. `{schema}` means <catalog>.<schema>
-# (passed to genie_as_code.py with --schema). Keys use the Genie UI's names; only title and sources are required.
+# (from the bundle target in databricks.yml). Keys use the Genie UI's names; only title and sources are required.
 
 # --- Configure > About
 title: My Agent                        # Name

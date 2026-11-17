@@ -1,11 +1,12 @@
 """Manage Genie agents as readable files. File keys use the Genie UI's names (see README).
 
-  python genie_as_code.py build    --schema main.analytics      files -> .build/ (specs + DAB resources)
-  python genie_as_code.py test     --schema main.analytics [--sql]  check the files (and run their SQL)
-  python genie_as_code.py explode  <agent> --schema main.analytics  live agent -> files
-  python genie_as_code.py evaluate                              run every agent's benchmarks
+  python genie_as_code.py build            files -> .build/ (specs + DAB resources)
+  python genie_as_code.py test [--sql]     check the files (and run their SQL on the warehouse)
+  python genie_as_code.py explode <agent>  live agent -> files
+  python genie_as_code.py evaluate         run every agent's benchmarks
 
-`{schema}` in the files stands for <catalog>.<schema>. See genie-agent-template/ for every setting.
+Every command takes --target (default: dev). The catalog, schema, and warehouse come from that
+bundle target, and `{schema}` in the files stands for <catalog>.<schema>. Usually run through `make`.
 """
 import argparse
 import hashlib
@@ -271,7 +272,8 @@ def resource(agent):
     return res
 
 
-def build(schema):
+def build(target):
+    schema = bundle_settings(target)["schema"]
     BUILD.mkdir(exist_ok=True)
     for old in BUILD.glob("*.geniespace.json"):
         old.unlink()
@@ -399,7 +401,10 @@ def check_sql(agent, spec, w, warehouse, done):
     return problems
 
 
-def test(schema, with_sql):
+def test(target, with_sql):
+    # Offline checks don't need a workspace, so they use a placeholder schema.
+    settings = bundle_settings(target) if with_sql else {"schema": "catalog.schema"}
+    schema = settings["schema"]
     problems, specs = [], {}
     for agent in agent_names():
         try:
@@ -413,7 +418,7 @@ def test(schema, with_sql):
         if data["source"] not in used:
             problems.append(f"{path.relative_to(ROOT)}: no agent uses {data['source']}")
     if with_sql:
-        w, warehouse, done = WorkspaceClient(), bundle_var("warehouse_id"), set()
+        w, warehouse, done = WorkspaceClient(), settings["warehouse_id"], set()
         for agent, spec in specs.items():
             problems += check_sql(agent, spec, w, warehouse, done)
     for p in problems:
@@ -424,18 +429,22 @@ def test(schema, with_sql):
 
 # ---------------------------------------------------------------- explode
 
-def bundle(*args):
-    out = subprocess.run(["databricks", "bundle", *args, "-o", "json"], cwd=ROOT, check=True,
-                         capture_output=True, text=True).stdout
-    return json.loads(out)
+def bundle(target, command):
+    result = subprocess.run(["databricks", "bundle", command, "--target", target, "-o", "json"], cwd=ROOT,
+                            capture_output=True, text=True)
+    if result.returncode:
+        sys.exit(f"databricks bundle {command} failed:\n{result.stderr.strip()}")
+    return json.loads(result.stdout)
 
 
-def bundle_var(name):
-    return bundle("validate")["variables"][name]["value"]
+def bundle_settings(target):
+    """Catalog, schema, and warehouse for a bundle target, from databricks.yml."""
+    v = {k: x.get("value") for k, x in bundle(target, "validate")["variables"].items()}
+    return {"schema": f"{v['catalog']}.{v['schema']}", "warehouse_id": v["warehouse_id"]}
 
 
-def space_ids():
-    return {k: v["id"] for k, v in bundle("summary")["resources"].get("genie_spaces", {}).items()}
+def space_ids(target):
+    return {k: v["id"] for k, v in bundle(target, "summary")["resources"].get("genie_spaces", {}).items()}
 
 
 def fetch(w, space_id):
@@ -475,8 +484,12 @@ def source_key(s):
     return ("table", s["table"]) if "table" in s else ("function", s["function"])
 
 
-def explode(agent, schema):
-    live_raw = fetch(WorkspaceClient(), space_ids()[agent])
+def explode(target, agent):
+    schema = bundle_settings(target)["schema"]
+    ids = space_ids(target)
+    if agent not in ids:
+        sys.exit(f"no deployed agent '{agent}' in target '{target}'; deployed: {', '.join(ids) or 'none'}")
+    live_raw = fetch(WorkspaceClient(), ids[agent])
     live = json.loads(json.dumps(live_raw).replace(schema, TOKEN))
     folder = AGENTS / agent
     old = load_agent(agent)
@@ -591,10 +604,10 @@ def canon(o):
 
 # ---------------------------------------------------------------- evaluate
 
-def evaluate():
+def evaluate(target):
     w = WorkspaceClient()
     failed = False
-    for agent, space_id in space_ids().items():
+    for agent, space_id in space_ids(target).items():
         base = f"/api/2.0/genie/spaces/{space_id}/eval-runs"
         run = w.api_client.do("POST", base, body={})
         while run.get("eval_run_status") in (None, "NOT_STARTED", "RUNNING"):
@@ -611,24 +624,23 @@ def evaluate():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--target", default="dev", help="bundle target (default: dev)")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("build").add_argument("--schema", required=True)
-    p = sub.add_parser("test")
-    p.add_argument("--schema", required=True)
-    p.add_argument("--sql", action="store_true", help="also run every query against the bundle's warehouse")
-    p = sub.add_parser("explode")
-    p.add_argument("agent")
-    p.add_argument("--schema", required=True)
-    sub.add_parser("evaluate")
+    sub.add_parser("build", parents=[common])
+    sub.add_parser("test", parents=[common]).add_argument(
+        "--sql", action="store_true", help="also run every query against the target's warehouse")
+    sub.add_parser("explode", parents=[common]).add_argument("agent")
+    sub.add_parser("evaluate", parents=[common])
     args = parser.parse_args()
     if args.command == "build":
-        build(args.schema)
+        build(args.target)
     elif args.command == "test":
-        test(args.schema, args.sql)
+        test(args.target, args.sql)
     elif args.command == "explode":
-        explode(args.agent, args.schema)
+        explode(args.target, args.agent)
     else:
-        evaluate()
+        evaluate(args.target)
 
 
 if __name__ == "__main__":

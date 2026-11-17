@@ -1,0 +1,28 @@
+# Demo data only: synthetic tables, metric views, and functions the example agents use.
+# Real projects point agents at their own tables and don't need this.
+bundle:
+  name: genie_agents_demo_data
+
+variables:
+  catalog:
+    description: Catalog for the demo tables and metric views
+  schema:
+    description: Schema for the demo tables and metric views
+    default: genie_as_code
+
+resources:
+  jobs:
+    setup_demo_data:
+      name: genie-as-code-demo-data
+      tasks:
+        - task_key: setup
+          notebook_task:
+            notebook_path: ./setup.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+targets:
+  dev:
+    mode: development
+    default: true
