@@ -1,0 +1,31 @@
+resources:
+  experiments:
+    traces:
+      name: /Shared/agents/custom-opencode
+      trace_location:
+        uc_trace_location:
+          catalog: ${var.trace_catalog}
+          schema: ${var.trace_schema}
+          table_prefix: custom_opencode_agent
+
+  apps:
+    custom_opencode_agent:
+      name: agent-custom-opencode
+      description: Chat agent whose brain is the OpenCode harness, configured by agent/ and served through the Agent Bricks invocation API
+      source_code_path: ..
+      # User authorization: each caller's token is forwarded, so model and MCP calls run as the signed-in user.
+      user_api_scopes:
+        - sql
+        - ai-gateway
+      resources:
+        - name: traces
+          experiment:
+            experiment_id: ${resources.experiments.traces.id}
+            permission: CAN_MANAGE
+      config:
+        command: ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: databricks
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: traces
