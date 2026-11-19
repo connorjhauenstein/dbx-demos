@@ -1,0 +1,27 @@
+bundle:
+  name: agent-playground
+
+# Deploy agents.local.yml even though it's gitignored.
+sync:
+  include:
+    - agents.local.yml
+
+# The user API scopes let the app forward the signed-in user's token:
+#   apps        list agent-* apps as the user (required for discovery)
+#   sql         agent tools that run SQL as the user
+#   ai-gateway  agent model calls made with the user's token
+resources:
+  apps:
+    agent_playground:
+      name: multi-agent-playground  # no agent- prefix, so Unity Gateway doesn't list it as an agent
+      description: Chat with deployed agents as the signed-in user
+      source_code_path: ./
+      user_api_scopes:
+        - apps
+        - sql
+        - ai-gateway
+
+targets:
+  dev:
+    mode: development
+    default: true

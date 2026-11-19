@@ -142,6 +142,8 @@ w = WorkspaceClient()
 host = w.config.host.rstrip("/")
 token = w.config.authenticate()["Authorization"].removeprefix("Bearer ")
 mcps = {name.split(".")[-1]: f"{host}/ai-gateway/mcp-services/{name}" for name in config.get("mcps", [])}
+# Unity Catalog functions, served as tools by Databricks managed MCP (catalog.schema.function).
+mcps |= {name.split(".")[-1]: f"{host}/api/2.0/mcp/functions/{name.replace('.', '/')}" for name in config.get("functions", [])}
 
 # Node.js and the agent CLI, installed into an empty scratch directory the agent runs in.
 work = Path(tempfile.mkdtemp())
@@ -166,7 +168,10 @@ print(f"Running {task} with {harness_name} and {model}, tags {tags}", flush=True
 # The session is the job run, so a compare_agents run groups its agents' traces.
 os.environ["MLFLOW_TRACKING_URI"] = "databricks"
 # The task's experiment (created by the bundle) and its Unity Catalog trace location; every run of the task lands here.
-mlflow.set_experiment(experiment_id=mlflow.get_experiment_by_name(f"{experiments}{task}").experiment_id)
+experiment_id = mlflow.get_experiment_by_name(f"{experiments}{task}").experiment_id
+mlflow.set_experiment(experiment_id=experiment_id)
+# Prompts can link to their own traces, e.g. in a Slack button.
+prompt = prompt.replace("{traces_url}", f"{host}/ml/experiments/{experiment_id}?compareRunsMode=TRACES")
 trace = mlflow.start_span_no_context(
     task, span_type="AGENT", inputs={"prompt": prompt}, tags=tags,
     metadata={"mlflow.trace.session": job_run_id, "mlflow.trace.user": w.current_user.me().user_name},

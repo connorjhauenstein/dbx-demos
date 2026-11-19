@@ -1,0 +1,18 @@
+# OpenCode as a Databricks App: the agent is agent/prompt.md + agent/agent.yml, served over the Agent Bricks invocation API.
+#   databricks bundle deploy -t dev --var trace_catalog=<catalog> --var trace_schema=<schema>
+#   databricks bundle run custom_opencode_agent
+bundle:
+  name: custom-opencode-agent
+
+include:
+  - resources/*.yml
+
+variables:
+  trace_catalog:
+    description: Unity Catalog catalog for the MLflow trace tables
+  trace_schema:
+    description: Unity Catalog schema for the MLflow trace tables
+
+targets:
+  dev:
+    default: true

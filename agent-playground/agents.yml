@@ -1,0 +1,18 @@
+# Agents added by hand. Apps named agent-* are discovered automatically (the same apps
+# Unity Gateway lists as agents); list anything else here, such as agents outside this
+# workspace. Put workspace-specific URLs in agents.local.yml (same format, gitignored,
+# still deployed with the app).
+#
+# Every agent must speak the Agent Bricks invocation API (POST /api/invocations).
+# Check one with: python check_agent.py <url>
+#
+# Fields:
+#   name         required, unique; shown in the picker
+#   url          required, the agent app's URL (https://...)
+#   description  optional, shown under the picker
+#
+# agents:
+#   - name: My Custom Agent
+#     url: https://<your-app>.databricksapps.com
+#     description: Custom LangGraph agent with Lakebase memory
+agents: []

@@ -1,0 +1,71 @@
+bundle:
+  name: custom-langgraph
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for MLflow trace tables.
+  trace_schema:
+    description: Unity Catalog schema for MLflow trace tables. Must already exist.
+    default: agent_traces
+  warehouse_id:
+    description: SQL warehouse ID for the SQL tool and MLflow trace tables.
+  model:
+    description: Unity AI Gateway model the agent calls.
+    default: system.ai.claude-sonnet-5-5
+
+resources:
+  postgres_projects:
+    lakebase:
+      project_id: custom-langgraph
+      display_name: custom-langgraph
+      pg_version: 17
+
+  experiments:
+    traces:
+      name: /Shared/agents/custom-langgraph
+      trace_location:
+        uc_trace_location:
+          catalog: ${var.catalog}
+          schema: ${var.trace_schema}
+          table_prefix: custom_langgraph
+
+  apps:
+    custom_langgraph:
+      name: agent-custom-langgraph
+      description: Custom LangGraph agent API with Lakebase memory, an in-code SQL tool, and UC MLflow traces.
+      source_code_path: ./
+      resources:
+        - name: experiment
+          experiment:
+            experiment_id: ${resources.experiments.traces.id}
+            permission: CAN_MANAGE
+        - name: warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+        - name: lakebase
+          postgres:
+            branch: ${resources.postgres_projects.lakebase.name}/branches/production
+            database: ${resources.postgres_projects.lakebase.name}/branches/production/databases/databricks-postgres
+            permission: CAN_CONNECT_AND_CREATE
+      config:
+        command:
+          - python
+          - -m
+          - uvicorn
+          - main:app
+          - --host
+          - 0.0.0.0
+          - --port
+          - "8000"
+        env:
+          - name: MODEL_NAME
+            value: ${var.model}
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: experiment
+          - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+            value_from: warehouse
+          - name: DATABRICKS_WAREHOUSE_ID
+            value_from: warehouse
+          - name: LAKEBASE_ENDPOINT
+            value: projects/custom-langgraph/branches/production/endpoints/primary

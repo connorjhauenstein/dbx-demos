@@ -1,0 +1,4 @@
+# The agent's model and the Unity Gateway MCP services it may call. The server generates OpenCode's config from these.
+model: system.ai.claude-sonnet-5-5
+mcps:
+  - system.ai.dbsql

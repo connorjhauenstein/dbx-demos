@@ -1,0 +1,19 @@
+schema_version = 1
+
+[agent]
+framework = "langgraph"
+server = "agentbricks"
+deployment_name = "finops"
+
+[memory_store]
+name = "agentbricks-langgraph-vroqfw-memory"
+
+[session_store]
+name = "agentbricks-langgraph-vroqfw-sessions"
+
+[tracing]
+experiment_name = "/Shared/agents/finops"
+[[tools]]
+id = "dbsql"
+auth = "user"
+source = {kind = "mcp", service = "system.ai.dbsql"}
